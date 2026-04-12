@@ -65,6 +65,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /** Alias for docs/env that still use MAIL_LOG_CHANNEL=log */
+        'log' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/laravel.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
@@ -121,6 +129,14 @@ return [
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,
+        ],
+
+        /** Council queue job + orchestrator milestones; set COLLEGE_LIST_COUNCIL_LOG_CHANNEL=college_list_council */
+        'college_list_council' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/college-list-council.log'),
+            'level' => env('COLLEGE_LIST_COUNCIL_LOG_LEVEL', env('LOG_LEVEL', 'debug')),
+            'replace_placeholders' => true,
         ],
 
         'emergency' => [

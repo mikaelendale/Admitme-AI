@@ -3,6 +3,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
+import OnboardingLayout from '@/layouts/onboarding-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -15,8 +16,21 @@ createInertiaApp({
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
+            case name === 'onboarding':
+                return OnboardingLayout;
             case name.startsWith('settings/'):
                 return [AppLayout, SettingsLayout];
+            case name.startsWith('legal/'):
+                return null;
+            case name === 'dashboard':
+            case name === 'dashboard/chats-index':
+            case name === 'college-lists/school':
+            case name === 'essay-suite':
+            case name === 'essay-suite/supplements':
+            case name === 'gap-fix':
+            case name === 'profile-overview':
+            case name === 'notifications':
+                return AppLayout;
             default:
                 return AppLayout;
         }

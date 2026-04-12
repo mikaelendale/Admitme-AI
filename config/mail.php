@@ -72,7 +72,8 @@ return [
 
         'log' => [
             'transport' => 'log',
-            'channel' => env('MAIL_LOG_CHANNEL'),
+            // Must be a channel name from config/logging.php (not the mailer name "log").
+            'channel' => env('MAIL_LOG_CHANNEL') ?: env('LOG_CHANNEL', 'stack'),
         ],
 
         'array' => [

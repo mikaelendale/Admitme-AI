@@ -1,16 +1,17 @@
-import { Link } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
+import { SignOut } from '@phosphor-icons/react';
 import type { PropsWithChildren } from 'react';
 import Heading from '@/components/heading';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCurrentUrl } from '@/hooks/use-current-url';
-import { cn, toUrl } from '@/lib/utils';
-import { edit as editAppearance } from '@/routes/appearance';
+import { toUrl } from '@/lib/utils';
+import { addons, logout } from '@/routes';
 import { edit } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
 import type { NavItem } from '@/types';
 
-const sidebarNavItems: NavItem[] = [
+const settingsNavItems: NavItem[] = [
     {
         title: 'Profile',
         href: edit(),
@@ -22,56 +23,95 @@ const sidebarNavItems: NavItem[] = [
         icon: null,
     },
     {
-        title: 'Appearance',
-        href: editAppearance(),
+        title: 'Billing',
+        href: '/settings/billing',
+        icon: null,
+    },
+    {
+        title: 'Add-ons',
+        href: addons.url(),
+        icon: null,
+    },
+    {
+        title: 'Email alerts',
+        href: '/settings/notifications',
+        icon: null,
+    },
+    {
+        title: 'AI',
+        href: '/settings/ai',
+        icon: null,
+    },
+    {
+        title: 'Privacy',
+        href: '/settings/privacy',
         icon: null,
     },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
     const { isCurrentOrParentUrl } = useCurrentUrl();
+    const activeItem =
+        settingsNavItems.find((item) => isCurrentOrParentUrl(item.href)) ??
+        settingsNavItems[0];
+    const activeValue = toUrl(activeItem.href);
 
     return (
-        <div className="px-4 py-6">
-            <Heading
-                title="Settings"
-                description="Manage your profile and account settings"
-            />
+        <div className="flex min-h-0 flex-1 flex-col px-4 py-6 sm:px-6">
+            <div className="mx-auto flex w-full max-w-3xl flex-col">
+                <div className="mb-4 w-full ">
+                    <Heading
+                        title="Settings"
+                        description="Manage your profile and account settings"
+                    />
+                </div>
 
-            <div className="flex flex-col lg:flex-row lg:space-x-12">
-                <aside className="w-full max-w-xl lg:w-48">
-                    <nav
-                        className="flex flex-col space-y-1 space-x-0"
-                        aria-label="Settings"
-                    >
-                        {sidebarNavItems.map((item, index) => (
-                            <Button
-                                key={`${toUrl(item.href)}-${index}`}
-                                size="sm"
-                                variant="ghost"
+                <Tabs value={activeValue} className="mb-10 w-full">
+                    <div className="-mx-1 overflow-x-auto pb-1">
+                        <TabsList
+                            variant="line"
+                            className="inline-flex min-w-min gap-1 px-1"
+                            aria-label="Settings navigation"
+                        >
+                        {settingsNavItems.map((item) => (
+                            <TabsTrigger
+                                key={toUrl(item.href)}
+                                value={toUrl(item.href)}
                                 asChild
-                                className={cn('w-full justify-start', {
-                                    'bg-muted': isCurrentOrParentUrl(item.href),
-                                })}
                             >
                                 <Link href={item.href}>
                                     {item.icon && (
-                                        <item.icon className="h-4 w-4" />
+                                        <item.icon className="mr-1.5 h-4 w-4" />
                                     )}
                                     {item.title}
                                 </Link>
-                            </Button>
+                            </TabsTrigger>
                         ))}
-                    </nav>
-                </aside>
+                        </TabsList>
+                    </div>
+                </Tabs>
 
-                <Separator className="my-6 lg:hidden" />
-
-                <div className="flex-1 md:max-w-2xl">
-                    <section className="max-w-xl space-y-12">
-                        {children}
-                    </section>
+                <div className="mb-8 lg:hidden">
+                    <Button
+                        variant="outline"
+                        className="w-full justify-center gap-2"
+                        asChild
+                    >
+                        <Link
+                            href={logout.url()}
+                            method="post"
+                            as="button"
+                            onClick={() => router.flushAll()}
+                        >
+                            <SignOut className="size-4" weight="bold" />
+                            Log out
+                        </Link>
+                    </Button>
                 </div>
+
+                <section className="w-full max-w-xl space-y-12">
+                    {children}
+                </section>
             </div>
         </div>
     );

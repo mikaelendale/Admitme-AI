@@ -6,6 +6,17 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            college_list_council?: {
+                enabled: boolean;
+                reverb: {
+                    key: string;
+                    wsHost: string;
+                    wsPort: number;
+                    wssPort: number;
+                    scheme: string;
+                };
+            } | null;
+            unread_notification_count?: number;
             [key: string]: unknown;
         };
     }

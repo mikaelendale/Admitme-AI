@@ -32,5 +32,10 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="BILLING_ENFORCE_PURCHASE_ACCESS" value="false"/>
+        <env name="COLLEGE_LIST_COUNCIL_FAKE_PHASES" value="true"/>
+        <env name="COLLEGE_LIST_PAUSE_PREFLIGHT_IN_JOB" value="false"/>
+        <env name="ESSAY_SUITE_FAKE" value="true"/>
+        <env name="GAP_FIX_FAKE" value="true"/>
     </php>
 </phpunit>
