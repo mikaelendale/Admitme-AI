@@ -105,6 +105,7 @@ class OnboardingController extends Controller
             ]),
             'hasActiveSubscription' => $user->subscribed('default'),
             'maxProfileWords' => config('admissions.max_profile_words'),
+            'trial_only_mode' => (bool) config('billing.trial_only_mode', false),
         ]);
     }
 

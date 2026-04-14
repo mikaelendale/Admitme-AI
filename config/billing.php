@@ -4,6 +4,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Trial-only mode (cost control)
+    |--------------------------------------------------------------------------
+    |
+    | When true, only the $1 trial checkout path stays available for new
+    | purchases. Sprint, Pro subscription, Boost, and onboarding Sprint/Pro are
+    | hidden and blocked server-side. Existing Pro subscribers can still swap
+    | plans and use the billing portal.
+    |
+    */
+    'trial_only_mode' => filter_var(
+        env('BILLING_TRIAL_ONLY', false),
+        FILTER_VALIDATE_BOOLEAN,
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
     | Stripe Price IDs
     |--------------------------------------------------------------------------
     |

@@ -42,6 +42,7 @@ type Props = {
     access_required: boolean;
     checkout_cancelled: boolean;
     sprint_checkout_configured: boolean;
+    trial_only_mode: boolean;
     has_active_sprint_pass: boolean;
 };
 
@@ -94,6 +95,7 @@ export default function Billing({
     access_required,
     checkout_cancelled,
     sprint_checkout_configured,
+    trial_only_mode,
     has_active_sprint_pass,
 }: Props) {
     const { errors } = usePage<{ errors: { billing?: string } }>().props;
@@ -250,7 +252,24 @@ export default function Billing({
                     <InputError message={errors.billing} className="text-sm" />
                 </div>
 
-                {!subscribed && !has_active_sprint_pass ? (
+                {!subscribed && !has_active_sprint_pass && trial_only_mode ? (
+                    <section className="space-y-2">
+                        <h2 className="text-sm font-semibold text-foreground">
+                            One-time access
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Paid passes and Pro signup are paused while we limit
+                            costs. Use the{' '}
+                            <span className="font-medium text-foreground">
+                                $1 trial
+                            </span>{' '}
+                            during onboarding to unlock the workspace — or
+                            contact us if you need an exception.
+                        </p>
+                    </section>
+                ) : null}
+
+                {!subscribed && !has_active_sprint_pass && !trial_only_mode ? (
                     <section className="space-y-3">
                         <h2 className="text-sm font-semibold text-foreground">
                             One-time access

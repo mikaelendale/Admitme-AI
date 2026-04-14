@@ -24,9 +24,12 @@ class AddOnsController extends Controller
             }
         }
 
+        $trialOnly = (bool) config('billing.trial_only_mode', false);
+
         return Inertia::render('settings/add-ons', [
+            'trial_only_mode' => $trialOnly,
             'boost' => [
-                'checkout_configured' => $this->priceConfigured('boost'),
+                'checkout_configured' => ! $trialOnly && $this->priceConfigured('boost'),
                 'headline' => is_string($catalog['headline'] ?? null) ? $catalog['headline'] : 'Boost Pack',
                 'price_line' => is_string($catalog['price_line'] ?? null) ? $catalog['price_line'] : 'One-time add-on',
                 'summary' => is_string($catalog['summary'] ?? null) ? $catalog['summary'] : '',

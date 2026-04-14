@@ -18,6 +18,7 @@ type BoostPayload = {
 
 type Props = {
     boost: BoostPayload;
+    trial_only_mode?: boolean;
     checkout_success: boolean;
     checkout_cancelled: boolean;
 };
@@ -48,6 +49,7 @@ function Panel({
 
 export default function AddOns({
     boost,
+    trial_only_mode: trialOnlyMode = false,
     checkout_success,
     checkout_cancelled,
 }: Props) {
@@ -139,14 +141,17 @@ export default function AddOns({
                                             className="h-7 px-3 text-[11px]"
                                             disabled={
                                                 processing ||
-                                                !boost.checkout_configured
+                                                !boost.checkout_configured ||
+                                                trialOnlyMode
                                             }
                                         >
                                             {processing
                                                 ? 'Redirecting…'
-                                                : boost.checkout_configured
-                                                  ? 'Buy Boost Pack'
-                                                  : 'Stripe price not set'}
+                                                : trialOnlyMode
+                                                  ? 'Unavailable (trial-only mode)'
+                                                  : boost.checkout_configured
+                                                    ? 'Buy Boost Pack'
+                                                    : 'Stripe price not set'}
                                         </Button>
                                     </>
                                 )}

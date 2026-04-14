@@ -95,7 +95,12 @@ class BillingController extends Controller
             }
         }
 
+        $trialOnly = (bool) config('billing.trial_only_mode', false);
+
         $plans = BillingPlanCatalog::plansForSettings($currentPriceId, $recurringInterval);
+        if ($trialOnly && ! $subscribed) {
+            $plans = [];
+        }
 
         $hasActiveSprintPass = ! $subscribed
             && $user->platform_pass_plan === 'sprint'
@@ -114,13 +119,20 @@ class BillingController extends Controller
             'currentPlanTier' => BillingPlanCatalog::resolvedUserTier($currentPriceId, $recurringInterval),
             'access_required' => $request->boolean('access_required'),
             'checkout_cancelled' => $request->query('checkout') === 'cancel',
-            'sprint_checkout_configured' => $this->priceConfigured('sprint'),
+            'sprint_checkout_configured' => ! $trialOnly && $this->priceConfigured('sprint'),
+            'trial_only_mode' => $trialOnly,
             'has_active_sprint_pass' => $hasActiveSprintPass,
         ]);
     }
 
     public function subscribe(StartBillingSubscriptionCheckoutRequest $request): RedirectResponse|SymfonyResponse
     {
+        if (config('billing.trial_only_mode', false)) {
+            return back()->withErrors([
+                'billing' => 'New subscriptions are paused right now. Use your trial from onboarding, or contact support.',
+            ]);
+        }
+
         $user = $request->user();
 
         if ($user->subscribed('default')) {
@@ -160,6 +172,12 @@ class BillingController extends Controller
 
     public function checkout(StartBillingCheckoutRequest $request): RedirectResponse|SymfonyResponse
     {
+        if (config('billing.trial_only_mode', false)) {
+            return back()->withErrors([
+                'billing' => 'Paid passes and add-ons are paused right now. The $1 trial is available during onboarding.',
+            ]);
+        }
+
         $user = $request->user();
         $plan = $request->validated('plan');
 

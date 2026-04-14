@@ -17,8 +17,11 @@ class StartOnboardingCheckoutRequest extends FormRequest
      */
     public function rules(): array
     {
+        $trialOnly = (bool) config('billing.trial_only_mode', false);
+        $allowedPlans = $trialOnly ? ['trial'] : ['trial', 'sprint', 'pro'];
+
         return [
-            'plan' => ['required', Rule::in(['trial', 'sprint', 'pro'])],
+            'plan' => ['required', Rule::in($allowedPlans)],
             'billing_cycle' => [
                 Rule::requiredIf(fn () => $this->input('plan') === 'pro'),
                 'nullable',

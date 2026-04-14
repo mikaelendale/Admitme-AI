@@ -122,4 +122,73 @@ class BillingSettingsTest extends TestCase
             ->assertRedirect(route('billing.edit'))
             ->assertSessionHasErrors('billing');
     }
+
+    public function test_trial_only_mode_empties_pro_plans_for_non_subscribers(): void
+    {
+        config()->set('billing.trial_only_mode', true);
+
+        $user = User::factory()->create([
+            'onboarded' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('billing.edit'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('trial_only_mode', true)
+                ->where('plans', [])
+                ->where('sprint_checkout_configured', false));
+    }
+
+    public function test_trial_only_mode_blocks_new_subscription_checkout(): void
+    {
+        config()->set('billing.trial_only_mode', true);
+
+        $user = User::factory()->create([
+            'onboarded' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('billing.edit'))
+            ->post(route('billing.subscribe'), ['billing_cycle' => 'monthly'])
+            ->assertRedirect(route('billing.edit'))
+            ->assertSessionHasErrors('billing');
+    }
+
+    public function test_trial_only_mode_blocks_sprint_checkout(): void
+    {
+        config()->set('billing.trial_only_mode', true);
+        config()->set('billing.prices.sprint', 'price_sprint_test');
+
+        $user = User::factory()->create([
+            'onboarded' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('billing.edit'))
+            ->post(route('billing.checkout'), ['plan' => 'sprint'])
+            ->assertRedirect(route('billing.edit'))
+            ->assertSessionHasErrors('billing');
+    }
+
+    public function test_onboarding_checkout_rejects_sprint_in_trial_only_mode(): void
+    {
+        config()->set('billing.trial_only_mode', true);
+
+        $user = User::factory()->create([
+            'onboarded' => false,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('onboarding'))
+            ->post(route('onboarding.checkout'), [
+                'plan' => 'sprint',
+                'billing_cycle' => 'monthly',
+            ])
+            ->assertSessionHasErrors('plan');
+    }
 }

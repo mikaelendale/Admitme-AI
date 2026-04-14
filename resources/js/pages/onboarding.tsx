@@ -287,6 +287,7 @@ export type OnboardingPageProps = {
     responses: Record<string, OnboardingResponseRow>;
     hasActiveSubscription: boolean;
     maxProfileWords: number;
+    trial_only_mode?: boolean;
 };
 
 function isValidPersistedAgeRange(
@@ -306,6 +307,7 @@ export default function OnboardingPage({
     responses,
     hasActiveSubscription,
     maxProfileWords,
+    trial_only_mode: trialOnlyMode = false,
 }: OnboardingPageProps) {
     const { errors, csrf_token: csrfToken } = usePage<{
         errors: Record<string, string | undefined>;
@@ -1298,58 +1300,75 @@ export default function OnboardingPage({
                                             message={errors.billing}
                                         />
                                         <div className="space-y-3">
-                                            <div className="flex justify-start">
-                                                <div
-                                                    className={cn(
-                                                        'inline-flex gap-2 rounded-lg border border-muted bg-muted/30 p-1',
-                                                        billingComplete &&
-                                                            'pointer-events-none opacity-50',
-                                                    )}
-                                                >
-                                                    <button
-                                                        type="button"
-                                                        disabled={
-                                                            billingComplete ||
-                                                            checkoutBusy
-                                                        }
-                                                        onClick={() =>
-                                                            setRecurringPlanCycle(
-                                                                'monthly',
-                                                            )
-                                                        }
-                                                        className={`rounded-md px-2 py-1 text-sm font-medium transition-all disabled:cursor-not-allowed ${
-                                                            recurringPlanCycle ===
-                                                            'monthly'
-                                                                ? 'bg-foreground text-background shadow-md'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                        }`}
-                                                    >
-                                                        Monthly
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        disabled={
-                                                            billingComplete ||
-                                                            checkoutBusy
-                                                        }
-                                                        onClick={() =>
-                                                            setRecurringPlanCycle(
-                                                                'annual',
-                                                            )
-                                                        }
-                                                        className={`rounded-md px-2 py-1 text-sm font-medium transition-all disabled:cursor-not-allowed ${
-                                                            recurringPlanCycle ===
-                                                            'annual'
-                                                                ? 'bg-foreground text-background shadow-md'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                        }`}
-                                                    >
-                                                        Annual
-                                                    </button>
-                                                </div>
-                                            </div>
+                                            {trialOnlyMode ? (
+                                                <p className="text-center text-xs text-muted-foreground">
+                                                    Sprint and Pro are paused
+                                                    while we keep costs down —
+                                                    the $1 trial includes full
+                                                    access.
+                                                </p>
+                                            ) : null}
 
-                                            <div className="grid gap-2 md:grid-cols-2">
+                                            {!trialOnlyMode ? (
+                                                <div className="flex justify-start">
+                                                    <div
+                                                        className={cn(
+                                                            'inline-flex gap-2 rounded-lg border border-muted bg-muted/30 p-1',
+                                                            billingComplete &&
+                                                                'pointer-events-none opacity-50',
+                                                        )}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            disabled={
+                                                                billingComplete ||
+                                                                checkoutBusy
+                                                            }
+                                                            onClick={() =>
+                                                                setRecurringPlanCycle(
+                                                                    'monthly',
+                                                                )
+                                                            }
+                                                            className={`rounded-md px-2 py-1 text-sm font-medium transition-all disabled:cursor-not-allowed ${
+                                                                recurringPlanCycle ===
+                                                                'monthly'
+                                                                    ? 'bg-foreground text-background shadow-md'
+                                                                    : 'text-muted-foreground hover:text-foreground'
+                                                            }`}
+                                                        >
+                                                            Monthly
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled={
+                                                                billingComplete ||
+                                                                checkoutBusy
+                                                            }
+                                                            onClick={() =>
+                                                                setRecurringPlanCycle(
+                                                                    'annual',
+                                                                )
+                                                            }
+                                                            className={`rounded-md px-2 py-1 text-sm font-medium transition-all disabled:cursor-not-allowed ${
+                                                                recurringPlanCycle ===
+                                                                'annual'
+                                                                    ? 'bg-foreground text-background shadow-md'
+                                                                    : 'text-muted-foreground hover:text-foreground'
+                                                            }`}
+                                                        >
+                                                            Annual
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            <div
+                                                className={cn(
+                                                    'grid gap-2',
+                                                    !trialOnlyMode &&
+                                                        'md:grid-cols-2',
+                                                )}
+                                            >
                                                 {/* Trial Plan - Now Featured */}
                                                 <div
                                                     className={cn(
@@ -1406,8 +1425,10 @@ export default function OnboardingPage({
                                                     </Button>
                                                 </div>
 
-                                                {/* Sprint Plan - Now Secondary */}
-                                                <div
+                                                {!trialOnlyMode ? (
+                                                    <>
+                                                        {/* Sprint Plan - Now Secondary */}
+                                                        <div
                                                     className={cn(
                                                         'relative flex flex-col rounded-xl border border-muted bg-muted/30 p-2.5 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
                                                         sprintSelected &&
@@ -1525,7 +1546,9 @@ export default function OnboardingPage({
                                                             'Select Pro'
                                                         )}
                                                     </Button>
-                                                </div>
+                                                        </div>
+                                                    </>
+                                                ) : null}
                                             </div>
                                             <InputError
                                                 className="text-center text-sm"

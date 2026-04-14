@@ -22,7 +22,8 @@ class AddOnsPageTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('settings/add-ons')
-                ->has('boost'));
+                ->has('boost')
+                ->where('trial_only_mode', false));
     }
 
     public function test_boost_checkout_rejects_unconfigured_price(): void
@@ -52,5 +53,22 @@ class AddOnsPageTest extends TestCase
             ->from(route('addons'))
             ->post(route('billing.checkout'), ['plan' => 'invalid'])
             ->assertSessionHasErrors('plan');
+    }
+
+    public function test_boost_checkout_blocked_in_trial_only_mode_even_when_configured(): void
+    {
+        config()->set('billing.trial_only_mode', true);
+        config()->set('billing.prices.boost', 'price_boost_test');
+
+        $user = User::factory()->create([
+            'onboarded' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('addons'))
+            ->post(route('billing.checkout'), ['plan' => 'boost'])
+            ->assertRedirect(route('addons'))
+            ->assertSessionHasErrors('billing');
     }
 }
