@@ -1,6 +1,5 @@
 import { Link } from '@inertiajs/react';
 import { ShieldWarning } from '@phosphor-icons/react';
-import { cn } from '@/lib/utils';
 
 interface GapFixChatCardProps {
     schoolNames: string[];
@@ -9,21 +8,21 @@ interface GapFixChatCardProps {
     analysisId: string;
 }
 
-export function GapFixChatCard({ schoolNames, schoolCount, actionUrl, analysisId }: GapFixChatCardProps) {
+export function GapFixChatCard({ schoolNames, schoolCount, actionUrl }: GapFixChatCardProps) {
     const visibleSchools = schoolNames.slice(0, 4);
     const extraCount = schoolNames.length - visibleSchools.length;
 
     return (
         <div className="mb-3 rounded-lg border border-border bg-card/60 p-3 text-xs shadow-sm">
             <div className="flex items-start gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/50">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10">
                     <ShieldWarning className="size-5 text-amber-500" weight="duotone" />
                 </div>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-foreground">Gap Analysis Ready</span>
                         <span className="rounded border border-chart-2/40 bg-chart-2/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-chart-2">
-                            Complete
+                            {schoolCount} {schoolCount === 1 ? 'school' : 'schools'}
                         </span>
                     </div>
 
@@ -44,8 +43,7 @@ export function GapFixChatCard({ schoolNames, schoolCount, actionUrl, analysisId
                     </div>
 
                     <p className="mt-2 text-pretty text-muted-foreground">
-                        Your rejection risks and fix roadmap are ready. View your critical gaps and step-by-step
-                        actions.
+                        Your rejection risks and action plan are ready. See what's holding you back and how to fix it.
                     </p>
 
                     <div className="mt-2">
@@ -56,10 +54,6 @@ export function GapFixChatCard({ schoolNames, schoolCount, actionUrl, analysisId
                             View Gap Analysis →
                         </Link>
                     </div>
-
-                    <p className="mt-1.5 text-[10px] text-muted-foreground/60">
-                        Analysis ID: {analysisId.slice(0, 8)}…
-                    </p>
                 </div>
             </div>
         </div>

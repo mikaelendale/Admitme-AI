@@ -47,6 +47,23 @@ class BillingSettingsTest extends TestCase
                 ->where('has_active_sprint_pass', true));
     }
 
+    public function test_billing_page_shows_sprint_display_price_as_29_in_plan_line(): void
+    {
+        $user = User::factory()->create([
+            'onboarded' => true,
+            'email_verified_at' => now(),
+            'platform_pass_plan' => 'sprint',
+            'platform_pass_ends_at' => now()->addDays(30),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('billing.edit'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('planLine', fn (string $line) => str_contains($line, '$29')
+                    && str_contains($line, '90-day Admissions Sprint')));
+    }
+
     public function test_billing_page_no_active_sprint_flag_for_trial_pass(): void
     {
         $user = User::factory()->create([

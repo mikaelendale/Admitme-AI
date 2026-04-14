@@ -3,6 +3,8 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { ChartLine, CheckCircle, Lightning, WarningCircle } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { PaywallModal } from '@/components/paywall-modal';
+import { QuotaExhaustedModal } from '@/components/quota-exhausted-modal';
 import { ProseMarkdown } from '@/components/markdown/prose-markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +22,7 @@ import {
     readCsrfTokenFromMeta,
 } from '@/lib/laravelFetch';
 import { cn } from '@/lib/utils';
+import type { FeatureQuotasProps, QuotaFeatureDetail } from '@/types/feature-quotas';
 import { collegeLists, gapFix } from '@/routes';
 import {
     generate as gapFixGenerate,
@@ -72,6 +75,8 @@ type PageProps = {
         gpa_normalized_4: number | null;
         test_optional_status: string | null;
     };
+    isSubscribed?: boolean;
+    feature_quotas?: FeatureQuotasProps | null;
 };
 
 const ANALYSIS_STAGES = [
@@ -80,6 +85,30 @@ const ANALYSIS_STAGES = [
     'Scoring gaps',
     'Building your roadmap',
 ] as const;
+
+const WHATIF_KEY_PREFIX = 'admitme:gap-fix-whatif:';
+
+function whatIfStorageKey(
+    analysisId: string,
+    schoolIds: string[],
+    satD: number,
+    gpaD: number,
+): string {
+    return `${WHATIF_KEY_PREFIX}${analysisId}:${[...schoolIds].sort().join(',')}:${satD}:${gpaD}`;
+}
+
+function clearWhatIfSessionStorage(): void {
+    try {
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+            const k = sessionStorage.key(i);
+            if (k?.startsWith(WHATIF_KEY_PREFIX)) {
+                sessionStorage.removeItem(k);
+            }
+        }
+    } catch {
+        /* ignore */
+    }
+}
 
 function schoolNameById(schools: CollegeSchoolRow[], id: string): string {
     return schools.find((s) => s.id === id)?.school_name ?? 'School';
@@ -126,25 +155,6 @@ function reasonSeverityLabel(severity: ReasonSeverity): string {
     return 'Minor';
 }
 
-function retryAfterMinutes(res: Response): number | null {
-    const raw = res.headers.get('Retry-After');
-    if (!raw) {
-        return null;
-    }
-    const asInt = Number.parseInt(raw, 10);
-    if (!Number.isNaN(asInt) && asInt >= 0) {
-        return Math.max(1, Math.ceil(asInt / 60));
-    }
-    const asDate = Date.parse(raw);
-    if (!Number.isNaN(asDate)) {
-        const mins = Math.ceil((asDate - Date.now()) / 60_000);
-
-        return mins > 0 ? mins : 1;
-    }
-
-    return null;
-}
-
 function severityOrder(s: string): number {
     if (s === 'critical') {
         return 0;
@@ -157,8 +167,18 @@ function severityOrder(s: string): number {
 }
 
 export default function GapFixPage() {
-    const { college_schools, latest_analysis: initialLatest, profile_baseline } =
-        usePage<PageProps>().props;
+    const {
+        college_schools,
+        latest_analysis: initialLatest,
+        profile_baseline,
+        isSubscribed = false,
+        feature_quotas,
+    } = usePage<PageProps>().props;
+
+    const [paywallOpen, setPaywallOpen] = useState(false);
+    const [quotaModalOpen, setQuotaModalOpen] = useState(false);
+    const [quotaModalDetail, setQuotaModalDetail] = useState<QuotaFeatureDetail | null>(null);
+    const hasPaidAccess = isSubscribed === true;
 
     const [selected, setSelected] = useState<Set<string>>(() => {
         if (initialLatest?.selected_school_ids?.length) {
@@ -177,6 +197,23 @@ export default function GapFixPage() {
     const [gpaDelta, setGpaDelta] = useState(0);
     const [whatIfNarrative, setWhatIfNarrative] = useState<string | null>(null);
     const [whatIfBusy, setWhatIfBusy] = useState(false);
+
+    useEffect(() => {
+        if (!latest?.id) {
+            return;
+        }
+        const key = whatIfStorageKey(latest.id, Array.from(selected), satDelta, gpaDelta);
+        try {
+            const stored = sessionStorage.getItem(key);
+            if (stored) {
+                setWhatIfNarrative(stored);
+            } else {
+                setWhatIfNarrative(null);
+            }
+        } catch {
+            setWhatIfNarrative(null);
+        }
+    }, [latest?.id, selected, satDelta, gpaDelta]);
 
     useEffect(() => {
         if (!analyzing) {
@@ -209,6 +246,11 @@ export default function GapFixPage() {
 
         return Math.max(0, Math.min(4, Math.round((profile_baseline.gpa_normalized_4 + gpaDelta) * 100) / 100));
     }, [gpaDelta, profile_baseline.gpa_normalized_4]);
+
+    const gapQuota = feature_quotas?.features?.gap_analysis;
+    const roadmapQuota = feature_quotas?.features?.fix_roadmap;
+    const gapBlocked = gapQuota?.remaining === 0;
+    const roadmapBlocked = roadmapQuota?.remaining === 0;
 
     const toggleSchool = useCallback((id: string) => {
         setSelected((prev) => {
@@ -249,6 +291,7 @@ export default function GapFixPage() {
                 analysis?: LatestAnalysis;
                 message?: string;
                 errors?: Record<string, string[]>;
+                quota?: QuotaFeatureDetail;
             } = {};
             try {
                 data = JSON.parse(raw) as typeof data;
@@ -257,12 +300,11 @@ export default function GapFixPage() {
             }
 
             if (res.status === 429) {
-                const mins = retryAfterMinutes(res);
-                setThrottleMsg(
-                    mins != null
-                        ? `You've used your analysis runs for this hour. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`
-                        : `You've used your analysis runs for this hour. Try again in a little while.`,
-                );
+                setThrottleMsg(data.message ?? 'You have reached your gap analysis limit for your plan.');
+                if (data.quota) {
+                    setQuotaModalDetail(data.quota);
+                    setQuotaModalOpen(true);
+                }
 
                 return;
             }
@@ -294,6 +336,8 @@ export default function GapFixPage() {
             }
 
             if (data.analysis) {
+                clearWhatIfSessionStorage();
+                setWhatIfNarrative(null);
                 setLatest(data.analysis);
             }
         } catch {
@@ -325,20 +369,23 @@ export default function GapFixPage() {
                 }),
             });
             const raw = await res.text();
-            let data: { narrative?: string; message?: string; errors?: Record<string, string[]> } =
-                {};
+            let data: {
+                narrative?: string;
+                message?: string;
+                errors?: Record<string, string[]>;
+                quota?: QuotaFeatureDetail;
+            } = {};
             try {
                 data = JSON.parse(raw) as typeof data;
             } catch {
                 /* ignore */
             }
             if (res.status === 429) {
-                const mins = retryAfterMinutes(res);
-                setThrottleMsg(
-                    mins != null
-                        ? `You've hit the explain limit for this hour. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`
-                        : (data.message ?? 'Too many explain requests. Try again in a little while.'),
-                );
+                setThrottleMsg(data.message ?? 'You have reached your fix roadmap limit for your plan.');
+                if (data.quota) {
+                    setQuotaModalDetail(data.quota);
+                    setQuotaModalOpen(true);
+                }
 
                 return;
             }
@@ -353,13 +400,23 @@ export default function GapFixPage() {
             }
             if (data.narrative) {
                 setWhatIfNarrative(data.narrative);
+                try {
+                    if (latest?.id) {
+                        sessionStorage.setItem(
+                            whatIfStorageKey(latest.id, Array.from(selected), satDelta, gpaDelta),
+                            data.narrative,
+                        );
+                    }
+                } catch {
+                    /* ignore */
+                }
             }
         } catch {
             setError('Network error — try again.');
         } finally {
             setWhatIfBusy(false);
         }
-    }, [gpaDelta, satDelta, selected]);
+    }, [gpaDelta, latest?.id, satDelta, selected]);
 
     const payload = latest?.payload;
     const gapsSorted = useMemo(() => {
@@ -380,7 +437,7 @@ export default function GapFixPage() {
         <>
             <Head title="Gap + Fix" />
 
-            <div className="page-shell">
+            <div className={cn("page-shell relative", !hasPaidAccess && 'pointer-events-none select-none blur-sm')}>
                 <header className="mb-4 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <ChartLine className="size-6 text-primary" aria-hidden />
@@ -454,15 +511,22 @@ export default function GapFixPage() {
                             <div className="mt-4 flex flex-wrap items-center gap-2">
                                 <Button
                                     type="button"
-                                    disabled={analyzing || selected.size === 0}
+                                    disabled={analyzing || selected.size === 0 || gapBlocked}
                                     onClick={() => void runAnalysis()}
                                     className="gap-1.5"
                                 >
                                     <Lightning className="size-4" weight="bold" />
                                     {analyzing ? 'Analyzing…' : 'Run analysis'}
                                 </Button>
-                                <span className="text-xs text-muted-foreground">
-                                    Runs are rate-limited per hour — each run uses your current selection.
+                                <span
+                                    className={cn(
+                                        'text-xs',
+                                        gapQuota?.warning ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground',
+                                    )}
+                                >
+                                    {gapQuota && gapQuota.limit != null
+                                        ? `${gapQuota.used} of ${gapQuota.limit} gap analyses used${feature_quotas?.window_days ? ` per ${feature_quotas.window_days} days` : ''}.`
+                                        : 'Each run uses your current selection.'}
                                 </span>
                             </div>
                             {error ? (
@@ -812,11 +876,27 @@ export default function GapFixPage() {
                                             <Button
                                                 type="button"
                                                 variant="secondary"
-                                                disabled={whatIfBusy || selected.size === 0}
+                                                disabled={whatIfBusy || selected.size === 0 || roadmapBlocked}
                                                 onClick={() => void explainWhatIf()}
                                             >
                                                 {whatIfBusy ? 'Explaining…' : 'Explain impact'}
                                             </Button>
+                                            {roadmapQuota && roadmapQuota.limit != null ? (
+                                                <p
+                                                    className={cn(
+                                                        'text-xs',
+                                                        roadmapQuota.warning
+                                                            ? 'text-amber-700 dark:text-amber-300'
+                                                            : 'text-muted-foreground',
+                                                    )}
+                                                >
+                                                    {roadmapQuota.used} of {roadmapQuota.limit} fix roadmap runs used
+                                                    {feature_quotas?.window_days
+                                                        ? ` per ${feature_quotas.window_days} days`
+                                                        : ''}
+                                                    .
+                                                </p>
+                                            ) : null}
                                             {whatIfNarrative ? (
                                                 <div className="rounded-xl border border-border/60 bg-muted/10 p-4">
                                                     <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -839,6 +919,36 @@ export default function GapFixPage() {
                         )}
                     </div>
                 )}
+                
+                {!hasPaidAccess ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/55 p-4 supports-backdrop-filter:backdrop-blur-[2px]">
+                        <Card className="pointer-events-auto z-40 w-full max-w-md border-border/80 shadow-lg">
+                            <CardHeader>
+                                <CardTitle>Gap fix is a Pro feature</CardTitle>
+                                <CardDescription>
+                                    Get your step-by-step rejection fix roadmap and what-if simulator
+                                </CardDescription>
+                            </CardHeader>
+                            <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                                <Button
+                                    type="button"
+                                    className="w-full sm:w-auto"
+                                    onClick={() => setPaywallOpen(true)}
+                                >
+                                    Unlock now
+                                </Button>
+                            </CardFooter>
+                        </Card>
+                    </div>
+                ) : null}
+                
+                <PaywallModal open={paywallOpen} onOpenChange={setPaywallOpen} />
+                <QuotaExhaustedModal
+                    open={quotaModalOpen}
+                    onOpenChange={setQuotaModalOpen}
+                    quota={quotaModalDetail}
+                    plan={feature_quotas?.plan}
+                />
             </div>
         </>
     );

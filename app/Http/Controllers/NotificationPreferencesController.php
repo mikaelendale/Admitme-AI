@@ -19,6 +19,8 @@ class NotificationPreferencesController extends Controller
             'email_college_list',
             'email_gap_fix',
             'email_deadlines',
+            'email_pass_expiry',
+            'email_payment_failed',
         ];
     }
 

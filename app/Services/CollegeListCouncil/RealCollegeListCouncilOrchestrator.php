@@ -133,6 +133,7 @@ class RealCollegeListCouncilOrchestrator implements CollegeListCouncilOrchestrat
         $allVerdicts = [];
         $phaseStart = hrtime(true);
         $batchIndex = 0;
+        $failedJudgeSchoolCount = 0;
 
         foreach (array_chunk($candidates, $batchSize) as $batch) {
             if ($batch === []) {
@@ -166,12 +167,23 @@ class RealCollegeListCouncilOrchestrator implements CollegeListCouncilOrchestrat
                 ]);
                 $batchIndex++;
             } catch (Throwable $e) {
+                $failedJudgeSchoolCount += count($batch);
                 CollegeListCouncilRunLog::warning('Council judge batch failed', [
                     'run_id' => (string) $run->id,
                     'user_id' => $run->user_id,
                     'batch_index' => $batchIndex,
                     'error' => $e->getMessage(),
                 ]);
+                $runForEvent = $run->fresh();
+                if ($runForEvent !== null) {
+                    $this->recorder->appendEvent(
+                        $runForEvent,
+                        'judge',
+                        CollegeListRunEvent::SEVERITY_INFO,
+                        'Some schools could not be evaluated',
+                        'A judging batch failed ('.count($batch).' schools). Those candidates were skipped for this run.',
+                    );
+                }
                 $batchIndex++;
             }
         }
@@ -224,6 +236,13 @@ class RealCollegeListCouncilOrchestrator implements CollegeListCouncilOrchestrat
         ]);
 
         $summary = $this->buildDeterministicSummary($preflight, $allVerdicts, count($finalSchools));
+        if ($failedJudgeSchoolCount > 0) {
+            $summary .= ' '.$this->failedJudgeSummaryLine($failedJudgeSchoolCount);
+        }
+        $tierNote = $this->tierBalanceNote($finalSchools);
+        if ($tierNote !== '') {
+            $summary .= ' '.$tierNote;
+        }
 
         if (config('college_list_council.llm_summary_enabled')) {
             // Optional: extra LLM call could append narrative; skipped by default.
@@ -440,5 +459,44 @@ class RealCollegeListCouncilOrchestrator implements CollegeListCouncilOrchestrat
         $constraintLine = $constraints !== [] ? ' Key constraints: '.implode(' ', array_map(strval(...), $constraints)) : '';
 
         return 'Council run finished. We evaluated '.count($verdicts)." candidates ({$adv} advanced, {$deb} debated, {$dis} discarded) and saved {$finalCount} schools to your list.{$constraintLine}";
+    }
+
+    private function failedJudgeSummaryLine(int $failedSchools): string
+    {
+        return "Note: {$failedSchools} candidate school(s) could not be scored in judging and were skipped.";
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $finalSchools
+     */
+    private function tierBalanceNote(array $finalSchools): string
+    {
+        $reach = 0;
+        $safety = 0;
+        foreach ($finalSchools as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $t = (string) ($row['tier'] ?? 'match');
+            if ($t === 'reach') {
+                $reach++;
+            } elseif ($t === 'safety') {
+                $safety++;
+            }
+        }
+
+        $parts = [];
+        if ($safety < 2) {
+            $parts[] = 'This list has fewer than 2 safeties — consider adding schools you would actually attend.';
+        }
+        if ($reach < 1) {
+            $parts[] = 'This list has no reach school — consider at least one stretch target if it fits your goals.';
+        }
+
+        if ($parts === []) {
+            return '';
+        }
+
+        return 'Balance check: '.implode(' ', $parts);
     }
 }

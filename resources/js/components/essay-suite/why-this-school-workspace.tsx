@@ -11,6 +11,7 @@ import {
     buildLaravelJsonHeaders,
     readCsrfTokenFromMeta,
 } from '@/lib/laravelFetch';
+import { buildEssayRateLimitMessage } from '@/lib/essayRateLimitMessage';
 import type { EssaySchoolOption } from '@/components/essay-suite/run-types';
 import type { WhySchoolDraftRow, WhyThisSchoolPayload } from '@/types/essay';
 import { CaretDown } from '@phosphor-icons/react';
@@ -33,6 +34,7 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
     const [payload, setPayload] = useState<WhyThisSchoolPayload | null>(null);
     const [draftText, setDraftText] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
     const selected = activeSchools.find((s) => s.id === schoolId);
 
@@ -64,6 +66,7 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
             return;
         }
         setError(null);
+        setRateLimitMessage(null);
         setBusy(true);
         setStageIdx(0);
         try {
@@ -80,6 +83,11 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
                 data = JSON.parse(raw) as typeof data;
             } catch {
                 /* ignore */
+            }
+            if (res.status === 429) {
+                setRateLimitMessage(buildEssayRateLimitMessage('whySchool', res));
+
+                return;
             }
             if (res.status === 422) {
                 setError(
@@ -163,6 +171,14 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
                 </div>
             ) : null}
 
+            {rateLimitMessage ? (
+                <div
+                    className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100"
+                    role="status"
+                >
+                    {rateLimitMessage}
+                </div>
+            ) : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
             {payload ? (

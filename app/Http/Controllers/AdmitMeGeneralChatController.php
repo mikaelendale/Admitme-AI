@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Ai\Agents\AdmitMeGeneralAgent;
 use App\Http\Requests\AdmitMeGeneralChatRequest;
 use App\Support\ConversationOwnership;
+use App\Support\FeatureQuotaManager;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,30 @@ class AdmitMeGeneralChatController extends Controller
 
         if (! empty($validated['conversation_id']) && ! ConversationOwnership::userOwnsConversation((int) $user->id, $validated['conversation_id'])) {
             return response()->json(['message' => 'Invalid conversation.'], 403);
+        }
+
+        $quota = app(FeatureQuotaManager::class);
+        $bucket = $quota->resolvePlanBucket($user);
+
+        if ($bucket === 'trial') {
+            if (empty($validated['conversation_id'])) {
+                if (! $quota->canUse($user, 'chat_conversation')) {
+                    return response()->json([
+                        'message' => 'Conversation limit reached for your trial.',
+                        'quota' => $quota->featureStatus($user, 'chat_conversation'),
+                    ], 429);
+                }
+            } elseif (! $quota->canUse($user, 'chat_message_per_convo', $validated['conversation_id'])) {
+                return response()->json([
+                    'message' => 'Message limit reached for this chat.',
+                    'quota' => $quota->featureStatus($user, 'chat_message_per_convo', $validated['conversation_id']),
+                ], 429);
+            }
+        } elseif (! $quota->canUse($user, 'chat_message')) {
+            return response()->json([
+                'message' => 'Monthly mentor message limit reached.',
+                'quota' => $quota->featureStatus($user, 'chat_message'),
+            ], 429);
         }
 
         try {

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\UpdateNotificationPreferencesRequest;
+use App\Support\FeatureQuotaManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -27,8 +28,18 @@ class NotificationPreferencesController extends Controller
         $user = $request->user();
         $stored = is_array($user->notification_preferences) ? $user->notification_preferences : [];
 
+        $merged = array_merge(self::defaults(), $stored);
+
+        $manager = app(FeatureQuotaManager::class);
+        if (! $manager->hasBinaryFeature($user, 'deadline_reminders')) {
+            $merged['deadline_reminders'] = false;
+        }
+        if (! $manager->hasBinaryFeature($user, 'weekly_progress_email')) {
+            $merged['weekly_progress'] = false;
+        }
+
         return Inertia::render('settings/notifications', [
-            'preferences' => array_merge(self::defaults(), $stored),
+            'preferences' => $merged,
         ]);
     }
 

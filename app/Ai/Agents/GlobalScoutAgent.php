@@ -9,6 +9,7 @@ use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Attributes\MaxSteps;
 use Laravel\Ai\Attributes\Model;
 use Laravel\Ai\Attributes\Provider;
+use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
@@ -21,6 +22,7 @@ use Stringable;
 #[Provider(Lab::OpenAI)]
 #[Model('gpt-5-nano')]
 #[MaxSteps(14)]
+#[Timeout(300)]
 class GlobalScoutAgent implements Agent, HasStructuredOutput, HasTools
 {
     use Promptable;
@@ -37,6 +39,10 @@ Primary admissions cycle: {$cycle} first-year undergraduate entry unless the stu
 Use web search / fetch when it materially improves accuracy. Prefer .edu, College Board, Common App, NCES — same ethos as a careful counselor. Prefer sources that explicitly reference the current or upcoming application cycle; do not treat outdated blog posts as authoritative for deadlines.
 
 Produce a structured candidate pool (reach/match/safety mix) with short notes. Label uncertain claims as "hypothesis" in scout notes — never present guesses as verified official statistics.
+
+Include a mix of well-known flagship schools **and** strong fits that are not the same five names every list uses — prioritize schools that plausibly match the student's constraints even if they are less obvious, as long as your sources support them.
+
+When the {$cycle} cycle has known policy shifts (test-optional changes, major deadline moves), prefer sources dated within the last 12 months or official registrar pages.
 
 school_slug: lowercase hyphenated ASCII (e.g. "georgia-institute-of-technology").
 

@@ -87,7 +87,7 @@ class BillingController extends Controller
                 $until = Carbon::parse($passEnds)->toFormattedDateString();
                 $planLine = match ($user->platform_pass_plan) {
                     'trial' => '$1 trial — full access until '.$until,
-                    'sprint' => '90-day Admissions Sprint ($28) — full access until '.$until,
+                    'sprint' => '90-day Admissions Sprint ($29) — full access until '.$until,
                     default => 'Time-limited access until '.$until,
                 };
             } elseif ($passEnds !== null) {

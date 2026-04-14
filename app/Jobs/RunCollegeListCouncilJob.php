@@ -4,12 +4,15 @@ namespace App\Jobs;
 
 use App\Models\CollegeListRun;
 use App\Models\CollegeListSchool;
+use App\Models\JobTracking;
 use App\Models\User;
+use App\Notifications\CollegeListFailedNotification;
 use App\Services\CollegeListCouncil\CollegeListCouncilOrchestratorContract;
 use App\Services\CollegeListCouncil\CollegeListCouncilRunLog;
 use App\Services\CollegeListCouncil\CollegeListRunRecorder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class RunCollegeListCouncilJob implements ShouldQueue
@@ -17,6 +20,8 @@ class RunCollegeListCouncilJob implements ShouldQueue
     use Queueable;
 
     public int $timeout;
+
+    public ?int $trackingId = null;
 
     public function __construct(
         public string $runId,
@@ -65,6 +70,7 @@ class RunCollegeListCouncilJob implements ShouldQueue
 
         $run->forceFill(['started_at' => $run->started_at ?? now()])->save();
 
+        $tracking = $this->startTracking((int) $user->id);
         $startedNs = hrtime(true);
 
         CollegeListCouncilRunLog::info('Council job started', [
@@ -89,6 +95,8 @@ class RunCollegeListCouncilJob implements ShouldQueue
                 'duration_ms' => $durationMs,
                 'schools_persisted_for_run' => $schoolsForRun,
             ]);
+
+            $this->completeTracking($tracking);
         } catch (Throwable $e) {
             CollegeListCouncilRunLog::error('RunCollegeListCouncilJob failed', [
                 'run_id' => $this->runId,
@@ -97,10 +105,117 @@ class RunCollegeListCouncilJob implements ShouldQueue
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            $this->failTrackingRecord($tracking, $e->getMessage());
+
             $fresh = $run->fresh();
             if ($fresh !== null && ! $fresh->isTerminal()) {
                 $recorder->fail($fresh, 'Something went wrong while building your college list. Please try again.');
             }
+        }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        Log::error('RunCollegeListCouncilJob permanently failed', [
+            'run_id' => $this->runId,
+            'tracking_id' => $this->trackingId,
+            'exception' => $exception::class,
+            'error' => $exception->getMessage(),
+        ]);
+
+        $tracking = $this->trackingId !== null
+            ? JobTracking::query()->find($this->trackingId)
+            : null;
+
+        if ($tracking !== null && $tracking->status !== JobTracking::STATUS_FAILED) {
+            $tracking->forceFill([
+                'status' => JobTracking::STATUS_FAILED,
+                'failed_at' => now(),
+                'error_message' => mb_strimwidth($exception->getMessage(), 0, 2000, '…'),
+            ])->save();
+        }
+
+        try {
+            $run = CollegeListRun::query()->find($this->runId);
+            if ($run !== null) {
+                // Ensure the run doesn't get stuck "active" forever (blocks future runs).
+                if (! $run->isTerminal()) {
+                    try {
+                        app(CollegeListRunRecorder::class)->fail(
+                            $run,
+                            'Your college list generation failed. Please try again.'
+                        );
+                    } catch (Throwable $e) {
+                        Log::warning('RunCollegeListCouncilJob: could not mark run failed', [
+                            'run_id' => $this->runId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                $user = User::query()->find($run->user_id);
+                if ($user !== null) {
+                    $user->notify(new CollegeListFailedNotification);
+                }
+            }
+        } catch (Throwable $e) {
+            Log::warning('RunCollegeListCouncilJob: failed() notification error', [
+                'run_id' => $this->runId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function startTracking(int $userId): ?JobTracking
+    {
+        try {
+            $tracking = JobTracking::query()->create([
+                'user_id' => $userId,
+                'job_type' => JobTracking::TYPE_COLLEGE_LIST_COUNCIL,
+                'status' => JobTracking::STATUS_RUNNING,
+                'payload' => ['run_id' => $this->runId],
+                'started_at' => now(),
+            ]);
+            $this->trackingId = $tracking->id;
+
+            return $tracking;
+        } catch (Throwable $e) {
+            Log::warning('RunCollegeListCouncilJob: could not create tracking record', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    private function completeTracking(?JobTracking $tracking): void
+    {
+        if ($tracking === null) {
+            return;
+        }
+
+        try {
+            $tracking->forceFill([
+                'status' => JobTracking::STATUS_COMPLETED,
+                'completed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            Log::warning('RunCollegeListCouncilJob: could not update tracking to completed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    private function failTrackingRecord(?JobTracking $tracking, string $message): void
+    {
+        if ($tracking === null) {
+            return;
+        }
+
+        try {
+            $tracking->forceFill([
+                'status' => JobTracking::STATUS_FAILED,
+                'failed_at' => now(),
+                'error_message' => mb_strimwidth($message, 0, 2000, '…'),
+            ])->save();
+        } catch (Throwable $e) {
+            Log::warning('RunCollegeListCouncilJob: could not update tracking to failed', ['error' => $e->getMessage()]);
         }
     }
 }

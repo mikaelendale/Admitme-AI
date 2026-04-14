@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreEssayRunRequest;
 use App\Models\EssayRun;
 use App\Services\EssaySuite\EssayRunStarter;
+use App\Support\FeatureQuotaManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -24,6 +25,8 @@ class EssayRunController extends Controller
         } catch (ConflictHttpException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
+
+        app(FeatureQuotaManager::class)->record($user, 'essay_draft');
 
         return response()->json([
             'run_id' => (string) $run->id,

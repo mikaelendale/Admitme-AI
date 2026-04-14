@@ -45,6 +45,8 @@ TXT;
                 return json_encode([
                     'ok' => false,
                     'error' => 'Essay text must be at least 100 characters. Ask the student to paste the full essay.',
+                    'retryable' => false,
+                    'suggestion' => 'Ask them to paste the full essay text in chat.',
                 ], JSON_UNESCAPED_UNICODE);
             }
 
@@ -52,6 +54,8 @@ TXT;
                 return json_encode([
                     'ok' => false,
                     'error' => 'Essay text must be at most 8000 characters. Ask the student to trim it.',
+                    'retryable' => false,
+                    'suggestion' => 'Ask them to split into two messages or trim the draft.',
                 ], JSON_UNESCAPED_UNICODE);
             }
 
@@ -67,7 +71,7 @@ TXT;
             }
 
             $service = app(EssayRoastService::class);
-            $result = $service->roast($this->user, $essayText, null, $essayType);
+            $result = $this->runRoastWithRetry(fn () => $service->roast($this->user, $essayText, null, $essayType));
 
             $payload = $result['payload'];
             $scores = is_array($payload['scores'] ?? null) ? $payload['scores'] : [];
@@ -96,7 +100,24 @@ TXT;
             return json_encode([
                 'ok' => false,
                 'error' => 'Roast failed: '.$e->getMessage(),
+                'retryable' => true,
+                'suggestion' => 'Try again in a moment.',
             ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        }
+    }
+
+    /**
+     * @param  callable(): array<string, mixed>  $runner
+     * @return array<string, mixed>
+     */
+    private function runRoastWithRetry(callable $runner): array
+    {
+        try {
+            return $runner();
+        } catch (\Throwable) {
+            usleep(2_000_000);
+
+            return $runner();
         }
     }
 

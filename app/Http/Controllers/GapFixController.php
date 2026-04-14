@@ -9,6 +9,7 @@ use App\Models\GapFixAnalysis;
 use App\Notifications\GapFixReadyNotification;
 use App\Services\GapFix\GapFixAnalysisService;
 use App\Services\GapFix\GapFixWhatIfExplainService;
+use App\Support\FeatureQuotaManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -82,6 +83,8 @@ class GapFixController extends Controller
             ]);
         }
 
+        app(FeatureQuotaManager::class)->record($user, 'gap_analysis');
+
         return response()->json([
             'analysis' => [
                 'id' => (string) $analysis->id,
@@ -102,6 +105,8 @@ class GapFixController extends Controller
         $gpaDelta = (float) $request->validated('gpa_delta');
 
         $markdown = $service->explain($request->user(), $ids, $satDelta, $gpaDelta);
+
+        app(FeatureQuotaManager::class)->record($request->user(), 'fix_roadmap');
 
         return response()->json([
             'narrative' => $markdown,

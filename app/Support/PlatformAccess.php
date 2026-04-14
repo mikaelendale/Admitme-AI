@@ -23,13 +23,24 @@ final class PlatformAccess
             return true;
         }
 
+        return self::hasActiveSubscriptionOrPass($user);
+    }
+
+    /**
+     * True when the user has an active Cashier default subscription or a non-expired platform pass.
+     * Ignores billing enforcement bypass (dev mode) so UI paywalls stay accurate.
+     */
+    public static function hasActiveSubscriptionOrPass(?User $user): bool
+    {
+        if ($user === null) {
+            return false;
+        }
+
         if ($user->subscribed('default')) {
             return true;
         }
 
-        $ends = $user->platform_pass_ends_at;
-
-        return self::activePlatformPass($ends);
+        return self::activePlatformPass($user->platform_pass_ends_at);
     }
 
     private static function activePlatformPass(mixed $ends): bool

@@ -99,38 +99,81 @@ export async function consumeVercelAiStream(
     }
 }
 
+const TOOL_LABELS: Record<string, string> = {
+    'GetStudentAdmissionContextTool': 'Reading your profile',
+    'GetStudentCollegeList': 'Loading your college list',
+    'StartEssayRunTool': 'Starting essay',
+    'StartGapFixTool': 'Analyzing gaps',
+    'StartEssayRoastTool': 'Roasting your essay',
+    'StartWhyThisSchoolTool': 'Drafting Why This School',
+    'StartCollegeListCouncilJobTool': 'Building your list',
+    'RunCollegeListAgentTool': 'Building your list',
+    'UpsertStudentCollegeList': 'Updating your list',
+    'GetCollegeListRunArtifactsTool': 'Checking results',
+    'WebSearch': 'Searching the web',
+    'web_search': 'Searching the web',
+};
+
+const TOOL_ICONS: Record<string, string> = {
+    'GetStudentAdmissionContextTool': 'profile',
+    'GetStudentCollegeList': 'list',
+    'StartEssayRunTool': 'essay',
+    'StartGapFixTool': 'gap',
+    'StartEssayRoastTool': 'roast',
+    'StartWhyThisSchoolTool': 'essay',
+    'StartCollegeListCouncilJobTool': 'council',
+    'RunCollegeListAgentTool': 'council',
+    'UpsertStudentCollegeList': 'list',
+    'GetCollegeListRunArtifactsTool': 'list',
+    'WebSearch': 'search',
+    'web_search': 'search',
+};
+
+export type StreamToolStep = {
+    id: string;
+    label: string;
+    icon: string;
+    status: 'running' | 'done';
+    toolName?: string;
+};
+
 export function streamEventLabel(part: VercelAiStreamPart): string | null {
     switch (part.type) {
         case 'start':
-            return 'Stream started';
         case 'text-start':
-            return 'Generating…';
         case 'text-delta':
-            return null;
         case 'text-end':
+        case 'data-conversation-id':
             return null;
         case 'finish':
-            return 'Complete';
+            return null;
         case 'tool-input-available': {
-            const toolLabels: Record<string, string> = {
-                'GetStudentAdmissionContextTool': 'Reading your profile…',
-                'GetStudentCollegeList': 'Loading your college list…',
-                'StartEssayRunTool': 'Starting essay generation…',
-                'StartGapFixTool': 'Running gap analysis…',
-                'StartEssayRoastTool': 'Roasting your essay…',
-                'StartWhyThisSchoolTool': 'Writing Why This School draft…',
-                'StartCollegeListCouncilJobTool': 'Starting college list council…',
-                'RunCollegeListAgentTool': 'Building your college list…',
-                'UpsertStudentCollegeList': 'Updating your list…',
-                'GetCollegeListRunArtifactsTool': 'Loading council results…',
-            };
-            return toolLabels[String(part.toolName ?? '')] ?? `Thinking (${String(part.toolName ?? 'tool')})…`;
+            return TOOL_LABELS[String(part.toolName ?? '')] ?? 'Working on it';
         }
         case 'tool-output-available':
-            return 'Tool finished';
-        case 'data-conversation-id':
-            return 'Conversation linked';
+            return null;
         default:
-            return typeof part.type === 'string' ? part.type : null;
+            return null;
     }
+}
+
+export function streamEventToStep(part: VercelAiStreamPart): StreamToolStep | null {
+    if (part.type === 'tool-input-available') {
+        const name = String(part.toolName ?? '');
+        return {
+            id: String(part.toolCallId ?? crypto.randomUUID()),
+            label: TOOL_LABELS[name] ?? 'Working on it',
+            icon: TOOL_ICONS[name] ?? 'default',
+            status: 'running',
+            toolName: name,
+        };
+    }
+    return null;
+}
+
+export function toolCallIdFromOutput(part: VercelAiStreamPart): string | null {
+    if (part.type === 'tool-output-available') {
+        return String(part.toolCallId ?? '') || null;
+    }
+    return null;
 }

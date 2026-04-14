@@ -5,6 +5,7 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            isSubscribed: boolean;
             sidebarOpen: boolean;
             college_list_council?: {
                 enabled: boolean;

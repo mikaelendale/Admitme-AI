@@ -3,7 +3,9 @@
 namespace App\Ai\Tools;
 
 use App\Models\CollegeListSchool;
+use App\Models\GapFixAnalysis;
 use App\Models\User;
+use App\Notifications\GapFixReadyNotification;
 use App\Services\GapFix\GapFixAnalysisService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -42,16 +44,31 @@ TXT;
         try {
             $schoolIdsRaw = $request->input('school_ids');
             if (! is_array($schoolIdsRaw) || $schoolIdsRaw === []) {
-                return json_encode(['ok' => false, 'error' => 'school_ids is required and must be a non-empty array.'], JSON_UNESCAPED_UNICODE);
+                return json_encode([
+                    'ok' => false,
+                    'error' => 'school_ids is required and must be a non-empty array.',
+                    'retryable' => false,
+                    'suggestion' => 'Call GetStudentCollegeList and pass real school IDs.',
+                ], JSON_UNESCAPED_UNICODE);
             }
 
             $schoolIds = array_values(array_filter(array_map('strval', $schoolIdsRaw)));
             if ($schoolIds === []) {
-                return json_encode(['ok' => false, 'error' => 'school_ids must contain at least one valid ID.'], JSON_UNESCAPED_UNICODE);
+                return json_encode([
+                    'ok' => false,
+                    'error' => 'school_ids must contain at least one valid ID.',
+                    'retryable' => false,
+                    'suggestion' => 'Use IDs from GetStudentCollegeList.',
+                ], JSON_UNESCAPED_UNICODE);
             }
 
             if (count($schoolIds) > 6) {
-                return json_encode(['ok' => false, 'error' => 'Maximum 6 schools per gap analysis. Please select fewer schools.'], JSON_UNESCAPED_UNICODE);
+                return json_encode([
+                    'ok' => false,
+                    'error' => 'Maximum 6 schools per gap analysis. Please select fewer schools.',
+                    'retryable' => false,
+                    'suggestion' => 'Ask the student to pick up to 6 schools.',
+                ], JSON_UNESCAPED_UNICODE);
             }
 
             $schools = CollegeListSchool::query()
@@ -67,14 +84,22 @@ TXT;
                 return json_encode([
                     'ok' => false,
                     'error' => 'These school IDs are not on the student\'s active list: '.implode(', ', $invalidIds).'. Call GetStudentCollegeList and use IDs from there.',
+                    'retryable' => false,
+                    'suggestion' => 'Refresh the list with GetStudentCollegeList and copy IDs exactly.',
                 ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
             }
 
             $service = app(GapFixAnalysisService::class);
-            $out = $service->generate($this->user, $schoolIds);
+            $out = $this->runGapFixWithRetry(fn () => $service->generate($this->user, $schoolIds));
 
             $analysis = $out['analysis'];
             $schoolNames = $schools->pluck('school_name')->all();
+
+            try {
+                $this->user->notify(new GapFixReadyNotification(count($schoolIds)));
+            } catch (\Throwable) {
+                // Notification failure must not affect tool output.
+            }
 
             return json_encode([
                 'ok' => true,
@@ -88,8 +113,27 @@ TXT;
         } catch (\Throwable $e) {
             return json_encode([
                 'ok' => false,
-                'error' => 'Gap analysis failed: '.$e->getMessage().'. Try selecting fewer schools.',
+                'error' => 'Gap analysis failed: '.$e->getMessage(),
+                'retryable' => true,
+                'suggestion' => 'Try again in a moment, or run on fewer schools if the request was large.',
             ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        }
+    }
+
+    /**
+     * One automatic retry after 2s (transient AI / network failures).
+     *
+     * @param  callable(): array{analysis: GapFixAnalysis}  $runner
+     * @return array{analysis: GapFixAnalysis}
+     */
+    private function runGapFixWithRetry(callable $runner): array
+    {
+        try {
+            return $runner();
+        } catch (\Throwable) {
+            usleep(2_000_000);
+
+            return $runner();
         }
     }
 

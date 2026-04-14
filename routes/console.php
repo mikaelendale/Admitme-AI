@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('admitme:send-deadline-notifications')
     ->dailyAt('08:00')
     ->timezone('UTC');
+
+Schedule::command('admitme:notify-expiring-passes')
+    ->dailyAt('08:30')
+    ->timezone('UTC');

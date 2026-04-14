@@ -45,7 +45,12 @@ TXT;
         try {
             $schoolId = trim($request->string('college_list_school_id')->toString());
             if ($schoolId === '') {
-                return json_encode(['ok' => false, 'error' => 'college_list_school_id is required.'], JSON_UNESCAPED_UNICODE);
+                return json_encode([
+                    'ok' => false,
+                    'error' => 'college_list_school_id is required.',
+                    'retryable' => false,
+                    'suggestion' => 'Get the school id from GetStudentCollegeList.',
+                ], JSON_UNESCAPED_UNICODE);
             }
 
             $school = CollegeListSchool::query()
@@ -58,11 +63,13 @@ TXT;
                 return json_encode([
                     'ok' => false,
                     'error' => 'School not found on this student\'s active list. Call GetStudentCollegeList and use the id from a real row.',
+                    'retryable' => false,
+                    'suggestion' => 'Add the school to the list first, then retry.',
                 ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
             }
 
             $service = app(WhyThisSchoolService::class);
-            $result = $service->generate($this->user, $schoolId);
+            $result = $this->runWhySchoolWithRetry(fn () => $service->generate($this->user, $schoolId));
 
             $payload = $result['payload'];
             $draft = (string) ($payload['draft'] ?? '');
@@ -84,7 +91,24 @@ TXT;
             return json_encode([
                 'ok' => false,
                 'error' => 'Draft generation failed: '.$e->getMessage(),
+                'retryable' => true,
+                'suggestion' => 'Try again in a moment.',
             ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        }
+    }
+
+    /**
+     * @param  callable(): array<string, mixed>  $runner
+     * @return array<string, mixed>
+     */
+    private function runWhySchoolWithRetry(callable $runner): array
+    {
+        try {
+            return $runner();
+        } catch (\Throwable) {
+            usleep(2_000_000);
+
+            return $runner();
         }
     }
 

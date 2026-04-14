@@ -4,12 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreEssayRoastRequest;
 use App\Services\Essay\EssayRoastService;
+use App\Support\FeatureQuotaManager;
 use Illuminate\Http\JsonResponse;
 
 class EssayRoastController extends Controller
 {
     /**
-     * Essay suite roast — throttle: essay-roast (see AppServiceProvider, config/essay_suite.php).
+     * Essay suite roast — plan quotas in {@see FeatureQuotaManager}.
      */
     public function store(StoreEssayRoastRequest $request, EssayRoastService $service): JsonResponse
     {
@@ -29,6 +30,8 @@ class EssayRoastController extends Controller
             $essayRunId,
             $essayType,
         );
+
+        app(FeatureQuotaManager::class)->record($user, 'essay_roast');
 
         return response()->json([
             'id' => $out['id'],

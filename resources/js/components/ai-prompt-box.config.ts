@@ -37,7 +37,7 @@ export const defaultPromptBoxFeatures: PromptBoxFeatures = {
     searchMode: true,
     thinkMode: false,
     canvasMode: false,
-    voiceInput: true,
+    voiceInput: false,
     modeDividers: false,
     imagePreviewModal: true,
 };

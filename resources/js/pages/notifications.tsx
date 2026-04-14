@@ -27,6 +27,8 @@ type EmailNotificationPreferences = {
     email_college_list: boolean;
     email_gap_fix: boolean;
     email_deadlines: boolean;
+    email_pass_expiry: boolean;
+    email_payment_failed: boolean;
 };
 
 type PageProps = {
@@ -55,6 +57,14 @@ const EMAIL_PREF_ROWS: {
     {
         key: 'email_deadlines',
         label: 'Email me for deadline reminders',
+    },
+    {
+        key: 'email_pass_expiry',
+        label: 'Email me before my trial or pass expires',
+    },
+    {
+        key: 'email_payment_failed',
+        label: 'Email me if a subscription payment fails',
     },
 ];
 

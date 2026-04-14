@@ -4,7 +4,15 @@ import type { ChangeEvent } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Plus } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
+import { PaywallModal } from '@/components/paywall-modal';
 import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardDescription,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -113,7 +121,8 @@ export default function EssaySupplementsPage() {
         supplements_summary,
         active_schools,
         supplements_nav_badge_count,
-    } = usePage<PageProps>().props;
+        isSubscribed = false,
+    } = usePage<PageProps & { isSubscribed?: boolean }>().props;
 
     const [filter, setFilter] = useState<string>('all');
     const [editor, setEditor] = useState<SupplementalEssayRow | null>(null);
@@ -134,6 +143,7 @@ export default function EssaySupplementsPage() {
     const [addLimit, setAddLimit] = useState('');
     const [addDue, setAddDue] = useState('');
     const [addStatus, setAddStatus] = useState('not_started');
+    const [paywallOpen, setPaywallOpen] = useState(false);
 
     const filteredGroups = useMemo(() => {
         if (filter === 'all') {
@@ -260,7 +270,10 @@ export default function EssaySupplementsPage() {
         <>
             <Head title="Supplements" />
 
-            <div className="page-shell">
+            <div className="page-shell relative">
+                <div
+                    className={cn(!isSubscribed && 'pointer-events-none select-none blur-sm')}
+                >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <h1 className="text-xl font-semibold tracking-tight text-foreground">
@@ -385,6 +398,28 @@ export default function EssaySupplementsPage() {
                         Add supplement
                     </Button>
                 </div>
+                </div>
+
+                {!isSubscribed ? (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-4 supports-backdrop-filter:backdrop-blur-[2px]">
+                        <Card className="pointer-events-auto w-full max-w-md border-border/80 shadow-lg">
+                            <CardHeader>
+                                <CardTitle>Supplemental essay tracker requires an active plan</CardTitle>
+                                <CardDescription>
+                                    Track all your school-specific essays, deadlines, word limits and statuses in
+                                    one place
+                                </CardDescription>
+                            </CardHeader>
+                            <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                                <Button type="button" className="w-full sm:w-auto" onClick={() => setPaywallOpen(true)}>
+                                    Unlock now
+                                </Button>
+                            </CardFooter>
+                        </Card>
+                    </div>
+                ) : null}
+
+                <PaywallModal open={paywallOpen} onOpenChange={setPaywallOpen} />
             </div>
 
             <Dialog open={addOpen} onOpenChange={setAddOpen}>

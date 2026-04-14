@@ -40,6 +40,8 @@ class NotificationsController extends Controller
             'email_college_list' => true,
             'email_gap_fix' => false,
             'email_deadlines' => true,
+            'email_pass_expiry' => true,
+            'email_payment_failed' => true,
         ];
         $stored = is_array($user->notification_preferences) ? $user->notification_preferences : [];
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActiveJobsController;
 use App\Http\Controllers\AdmitMeGeneralChatController;
 use App\Http\Controllers\CollegeListCouncilRunController;
 use App\Http\Controllers\CollegeListsController;
@@ -9,12 +10,15 @@ use App\Http\Controllers\EssayRunController;
 use App\Http\Controllers\EssayStrengthScoreController;
 use App\Http\Controllers\EssaySuiteController;
 use App\Http\Controllers\GapFixController;
+use App\Http\Controllers\JobRetryController;
 use App\Http\Controllers\LegalController;
 use App\Http\Controllers\NotificationPreferencesController;
 use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileCompletionController;
 use App\Http\Controllers\ProfileOverviewController;
+use App\Http\Controllers\ProviderCallbackController;
+use App\Http\Controllers\ProviderRedirectController;
 use App\Http\Controllers\SupplementalEssayController;
 use App\Http\Controllers\WhyThisSchoolController;
 use Illuminate\Support\Facades\Route;
@@ -22,6 +26,14 @@ use Laravel\Fortify\Features;
 
 Route::get('legal/privacy', [LegalController::class, 'privacy'])->name('legal.privacy');
 Route::get('legal/terms', [LegalController::class, 'terms'])->name('legal.terms');
+
+Route::get('/auth/{provider}/redirect', ProviderRedirectController::class)
+    ->name('auth.redirect')
+    ->middleware(['throttle:5,1']);
+
+Route::get('/auth/{provider}/callback', ProviderCallbackController::class)
+    ->name('auth.callback')
+    ->middleware(['throttle:5,1']);
 
 Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -33,6 +45,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('onboarding.admissions-read');
     Route::post('onboarding/step', [OnboardingController::class, 'saveStep'])->name('onboarding.step');
     Route::post('onboarding/checkout', [OnboardingController::class, 'checkout'])->name('onboarding.checkout');
+    Route::post('onboarding/skip-billing', [OnboardingController::class, 'skipBilling'])->name('onboarding.skip-billing');
     Route::post('onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
 });
 
@@ -43,9 +56,16 @@ Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(f
         ->whereUuid('conversation');
     Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('college-lists', [CollegeListsController::class, 'index'])->name('college-lists');
+    Route::post('college-lists/schools/manual', [CollegeListsController::class, 'storeManual'])
+        ->name('college-lists.schools.manual');
+    Route::patch('college-lists/{collegeListSchool}', [CollegeListsController::class, 'update'])
+        ->name('college-lists.school.update');
+    Route::delete('college-lists/{collegeListSchool}', [CollegeListsController::class, 'destroy'])
+        ->name('college-lists.school.destroy');
     Route::get('college-lists/{collegeListSchool}', [CollegeListsController::class, 'show'])
         ->name('college-lists.school');
     Route::post('college-lists/council-runs', [CollegeListCouncilRunController::class, 'store'])
+        ->middleware(['throttle:10,1', 'quota:college_list'])
         ->name('college-lists.council-runs.store');
     Route::get('college-lists/council-runs/{run}', [CollegeListCouncilRunController::class, 'show'])
         ->name('college-lists.council-runs.show');
@@ -61,26 +81,26 @@ Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(f
         ->name('essay-suite.supplements.update');
     Route::delete('essay-suite/supplements/{supplement}', [SupplementalEssayController::class, 'destroy'])
         ->name('essay-suite.supplements.destroy');
-    /** Essay suite LLM — throttles: AppServiceProvider + config/essay_suite.php */
+    /** Essay suite LLM — DDoS throttle + plan quotas (config/feature_limits.php) */
     Route::post('essay-suite/roast', [EssayRoastController::class, 'store'])
-        ->middleware('throttle:essay-roast')
+        ->middleware(['throttle:30,1', 'quota:essay_roast'])
         ->name('essay-suite.roast.store');
     Route::post('essay-suite/why-this-school', [WhyThisSchoolController::class, 'store'])
-        ->middleware('throttle:essay-why-school')
+        ->middleware('throttle:30,1')
         ->name('essay-suite.why-this-school.store');
     Route::post('essay-suite/score-only', [EssayStrengthScoreController::class, 'store'])
-        ->middleware('throttle:essay-score-only')
+        ->middleware(['throttle:30,1', 'quota:cliche_detector'])
         ->name('essay-suite.score-only.store');
-    /** Gap + Fix: strict per-user throttles — see RateLimiter::for in AppServiceProvider and config/gap_fix.php */
+    /** Gap + Fix: DDoS throttle + plan quotas — see config/feature_limits.php, FeatureQuotaManager */
     Route::get('gap-fix', GapFixController::class)->name('gap-fix');
     Route::post('gap-fix/generate', [GapFixController::class, 'generate'])
-        ->middleware('throttle:gap-fix-generate')
+        ->middleware(['throttle:30,1', 'quota:gap_analysis'])
         ->name('gap-fix.generate');
     Route::post('gap-fix/what-if/explain', [GapFixController::class, 'whatIfExplain'])
-        ->middleware('throttle:gap-fix-what-if-explain')
+        ->middleware(['throttle:30,1', 'quota:fix_roadmap'])
         ->name('gap-fix.what-if-explain');
     Route::post('essay-suite/runs', [EssayRunController::class, 'store'])
-        ->middleware('throttle:20,1')
+        ->middleware(['throttle:20,1', 'quota:essay_draft'])
         ->name('essay-suite.runs.store');
     Route::get('essay-suite/runs/{run}', [EssayRunController::class, 'show'])
         ->name('essay-suite.runs.show')
@@ -113,6 +133,15 @@ Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(f
     Route::patch('settings/notification-preferences', [NotificationPreferencesController::class, 'update'])
         ->middleware('throttle:60,1')
         ->name('settings.notification-preferences.update');
+
+    Route::post('jobs/{jobTrackingId}/retry', JobRetryController::class)
+        ->middleware('throttle:20,1')
+        ->name('jobs.retry')
+        ->whereNumber('jobTrackingId');
+
+    Route::get('api/jobs/active', ActiveJobsController::class)
+        ->middleware('throttle:60,1')
+        ->name('api.jobs.active');
 });
 
 require __DIR__.'/settings.php';

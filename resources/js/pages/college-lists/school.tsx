@@ -8,13 +8,27 @@ import {
     LinkSimple,
     MapPin,
 } from '@phosphor-icons/react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
+    type ApplicationStatus,
     type CollegeRow,
     fitScoreStyles,
     tierLabel,
     tierStyles,
 } from '@/lib/college-list-display';
+import {
+    buildLaravelJsonHeaders,
+    readCsrfTokenFromMeta,
+} from '@/lib/laravelFetch';
 import { cn } from '@/lib/utils';
 import { collegeLists } from '@/routes';
 
@@ -22,8 +36,51 @@ type PageProps = {
     school: CollegeRow;
 };
 
+const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
+    { value: 'not_started', label: 'Not started' },
+    { value: 'researching', label: 'Researching' },
+    { value: 'applying', label: 'Applying' },
+    { value: 'submitted', label: 'Submitted' },
+    { value: 'accepted', label: 'Accepted' },
+    { value: 'rejected', label: 'Rejected' },
+    { value: 'waitlisted', label: 'Waitlisted' },
+];
+
 export default function CollegeListSchoolPage() {
     const { school } = usePage<PageProps>().props;
+
+    const [applicationStatus, setApplicationStatus] = useState<ApplicationStatus>(
+        school.applicationStatus,
+    );
+    const [studentNotes, setStudentNotes] = useState(school.studentNotes ?? '');
+    const [savedFlash, setSavedFlash] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        setApplicationStatus(school.applicationStatus);
+        setStudentNotes(school.studentNotes ?? '');
+    }, [school.applicationStatus, school.studentNotes, school.id]);
+
+    const saveProgress = useCallback(
+        async (patch: { application_status?: ApplicationStatus; student_notes?: string | null }) => {
+            setSaving(true);
+            try {
+                const res = await fetch(`/college-lists/${school.id}`, {
+                    method: 'PATCH',
+                    credentials: 'same-origin',
+                    headers: buildLaravelJsonHeaders(readCsrfTokenFromMeta()),
+                    body: JSON.stringify(patch),
+                });
+                if (res.ok) {
+                    setSavedFlash(true);
+                    window.setTimeout(() => setSavedFlash(false), 2000);
+                }
+            } finally {
+                setSaving(false);
+            }
+        },
+        [school.id],
+    );
 
     return (
         <>
@@ -80,6 +137,62 @@ export default function CollegeListSchoolPage() {
                             Why this school
                         </h2>
                         <p className="text-sm leading-relaxed text-foreground">{school.whyFit}</p>
+                    </section>
+                    <section className="py-4">
+                        <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                            My progress
+                        </h2>
+                        <div className="space-y-3">
+                            <div>
+                                <Label className="text-xs text-muted-foreground">Application status</Label>
+                                <Select
+                                    value={applicationStatus}
+                                    onValueChange={(v) => {
+                                        const next = v as ApplicationStatus;
+                                        setApplicationStatus(next);
+                                        void saveProgress({ application_status: next });
+                                    }}
+                                    disabled={saving}
+                                >
+                                    <SelectTrigger className="mt-1">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {STATUS_OPTIONS.map((o) => (
+                                            <SelectItem key={o.value} value={o.value}>
+                                                {o.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label htmlFor="school-notes" className="text-xs text-muted-foreground">
+                                    Your notes
+                                </Label>
+                                <textarea
+                                    id="school-notes"
+                                    value={studentNotes}
+                                    onChange={(e) => setStudentNotes(e.target.value)}
+                                    onBlur={() => {
+                                        void saveProgress({
+                                            student_notes: studentNotes.trim() === '' ? null : studentNotes.trim(),
+                                        });
+                                    }}
+                                    rows={4}
+                                    maxLength={1000}
+                                    disabled={saving}
+                                    className="mt-1 flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    placeholder="Deadlines you’re tracking, visit plans, essay ideas…"
+                                />
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    {studentNotes.length}/1000 · saved when you leave the field
+                                </p>
+                            </div>
+                            {savedFlash ? (
+                                <p className="text-xs font-medium text-chart-2">Saved</p>
+                            ) : null}
+                        </div>
                     </section>
                     <section className="py-4">
                         <h2 className="mb-3 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">

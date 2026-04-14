@@ -2,7 +2,7 @@
 
 import { Link, router } from '@inertiajs/react';
 import { Lightbulb, WarningCircle } from '@phosphor-icons/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     buildLaravelJsonHeaders,
@@ -23,6 +23,33 @@ import type { EssayRecentRunRow, EssaySchoolOption } from './run-types';
 
 export type { EssaySchoolOption };
 
+const BRAINSTORM_PROMPT_STORAGE_KEY = 'admitme:brainstorm-prompt';
+
+function readBrainstormPromptFromStorage(): string {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+    try {
+        return localStorage.getItem(BRAINSTORM_PROMPT_STORAGE_KEY) ?? '';
+    } catch {
+        return '';
+    }
+}
+
+function brainstormProgressMessage(elapsedMs: number): string {
+    if (elapsedMs < 5000) {
+        return 'Starting your brainstorm…';
+    }
+    if (elapsedMs < 15000) {
+        return 'Generating angles based on your profile…';
+    }
+    if (elapsedMs < 30000) {
+        return 'Almost done — finalizing ideas…';
+    }
+
+    return 'Taking a bit longer than usual — still working…';
+}
+
 type BrainstormWorkspaceProps = {
     schools: EssaySchoolOption[];
     recentRuns: EssayRecentRunRow[];
@@ -36,7 +63,7 @@ export function BrainstormWorkspace({
 }: BrainstormWorkspaceProps) {
     const [schoolId, setSchoolId] = useState<string>(schools[0]?.id ?? '');
     const [essayType, setEssayType] = useState<EssayTypeValue>('supplemental');
-    const [essayPrompt, setEssayPrompt] = useState('');
+    const [essayPrompt, setEssayPrompt] = useState(() => readBrainstormPromptFromStorage());
     const [studentFocus, setStudentFocus] = useState('');
     const [wordLimit, setWordLimit] = useState('');
     const [tone, setTone] = useState<MentorToneValue>(() => coerceMentorTone(defaultMentorTone));
@@ -47,8 +74,55 @@ export function BrainstormWorkspace({
     const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
     const [savedCanvas, setSavedCanvas] = useState<string | null>(null);
     const [savedTitle, setSavedTitle] = useState<string | null>(null);
+    const [pollingElapsedMs, setPollingElapsedMs] = useState(0);
+
+    const promptSaveTimerRef = useRef<number | null>(null);
+    const pollingIntervalRef = useRef<number | null>(null);
+    const runStartedAtRef = useRef<number>(0);
 
     const brainstormRuns = recentRuns.filter((r) => r.run_type === 'brainstorm');
+
+    const scheduleSaveBrainstormPrompt = useCallback((value: string) => {
+        if (promptSaveTimerRef.current !== null) {
+            window.clearTimeout(promptSaveTimerRef.current);
+        }
+        promptSaveTimerRef.current = window.setTimeout(() => {
+            promptSaveTimerRef.current = null;
+            try {
+                localStorage.setItem(BRAINSTORM_PROMPT_STORAGE_KEY, value);
+            } catch {
+                /* ignore */
+            }
+        }, 1000);
+    }, []);
+
+    useEffect(() => {
+        if (activeRunId === null) {
+            setPollingElapsedMs(0);
+            if (pollingIntervalRef.current !== null) {
+                window.clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+            }
+
+            return;
+        }
+
+        runStartedAtRef.current = Date.now();
+        setPollingElapsedMs(0);
+        if (pollingIntervalRef.current !== null) {
+            window.clearInterval(pollingIntervalRef.current);
+        }
+        pollingIntervalRef.current = window.setInterval(() => {
+            setPollingElapsedMs(Date.now() - runStartedAtRef.current);
+        }, 1000);
+
+        return () => {
+            if (pollingIntervalRef.current !== null) {
+                window.clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+            }
+        };
+    }, [activeRunId]);
 
     const reloadRuns = useCallback(() => {
         router.reload({ only: ['essay_recent_runs'] });
@@ -71,6 +145,11 @@ export function BrainstormWorkspace({
             }
             setPoll(j);
             if (j.status === 'completed' && j.output_markdown) {
+                try {
+                    localStorage.removeItem(BRAINSTORM_PROMPT_STORAGE_KEY);
+                } catch {
+                    /* ignore */
+                }
                 setSavedCanvas(j.output_markdown);
                 setSavedTitle(j.title_for_card ?? j.school_name ?? 'Brainstorm');
                 setSelectedRunId(runId);
@@ -181,6 +260,15 @@ export function BrainstormWorkspace({
                 return;
             }
 
+            if (res.status === 429) {
+                setError(
+                    data.message ?? 'You have reached your essay brainstorm limit for your plan.',
+                );
+                setBusy(false);
+
+                return;
+            }
+
             if (!res.ok) {
                 const first =
                     data.errors && typeof data.errors === 'object'
@@ -223,12 +311,10 @@ export function BrainstormWorkspace({
         );
     }
 
-    const statusLine =
-        poll?.status === 'queued' || poll?.status === 'processing'
-            ? 'Brainstorm is running in the background…'
-            : poll?.status === 'failed'
-              ? poll.error_message ?? 'Run failed.'
-              : null;
+    const showRunStatusPanel =
+        busy ||
+        activeRunId !== null ||
+        (poll != null && poll.status !== 'completed');
 
     return (
         <div className="grid min-h-[min(78vh,820px)] gap-0 lg:grid-cols-2 lg:divide-x lg:divide-border/50 lg:rounded-xl lg:border lg:border-border/60 lg:overflow-hidden">
@@ -274,11 +360,20 @@ export function BrainstormWorkspace({
                         </label>
                         <textarea
                             value={essayPrompt}
-                            onChange={(e) => setEssayPrompt(e.target.value)}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setEssayPrompt(v);
+                                scheduleSaveBrainstormPrompt(v);
+                            }}
                             rows={4}
                             placeholder="Paste the exact wording from the Common App or the college’s supplement (required)."
                             className="w-full resize-y rounded-md border border-border/70 bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
                         />
+                        {essayPrompt.trim() ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Your text is saved locally as you type
+                            </p>
+                        ) : null}
                     </div>
                     <div className="space-y-1.5 sm:col-span-2">
                         <label className="text-xs font-medium text-foreground">
@@ -343,7 +438,7 @@ export function BrainstormWorkspace({
                 </div>
             </div>
 
-            {(busy || activeRunId !== null || poll) && (
+            {showRunStatusPanel ? (
                 <div
                     className={cn(
                         'shrink-0 rounded-lg border px-3 py-2 text-sm',
@@ -352,15 +447,19 @@ export function BrainstormWorkspace({
                             : 'border-primary/30 bg-primary/5',
                     )}
                 >
-                    <span className="font-semibold text-foreground">Run status: </span>
-                    <span className="text-muted-foreground">
-                        {poll?.status ?? 'starting…'}
-                    </span>
-                    {statusLine ? (
-                        <p className="mt-1 text-muted-foreground">{statusLine}</p>
-                    ) : null}
+                    <span className="font-semibold text-foreground">Progress</span>
+                    <p
+                        className={cn(
+                            'mt-1',
+                            poll?.status === 'failed' ? 'text-destructive' : 'text-muted-foreground',
+                        )}
+                    >
+                        {poll?.status === 'failed'
+                            ? poll.error_message ?? 'Run failed.'
+                            : brainstormProgressMessage(pollingElapsedMs)}
+                    </p>
                 </div>
-            )}
+            ) : null}
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
                 <p className="shrink-0 border-b border-border/50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\OnboardingProfile;
+use App\Support\FeatureQuotaManager;
 use App\Support\PlatformAccess;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -44,12 +45,27 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'isSubscribed' => PlatformAccess::hasActiveSubscriptionOrPass($request->user()),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'platform_access' => PlatformAccess::sharePayload($request->user()),
             'profile_completion' => $this->profileCompletionShare($request),
             'college_list_council' => $this->collegeListCouncilShare($request),
             'unread_notification_count' => $this->unreadNotificationCount($request),
+            'feature_quotas' => $this->featureQuotasShare($request),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function featureQuotasShare(Request $request): ?array
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return null;
+        }
+
+        return app(FeatureQuotaManager::class)->usageSummaryForInertia($user);
     }
 
     private function unreadNotificationCount(Request $request): int

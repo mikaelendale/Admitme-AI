@@ -15,9 +15,9 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Cashier\Billable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
-#[Fillable(['name', 'email', 'password', 'onboarded', 'notification_preferences', 'ai_preferences', 'platform_pass_plan', 'platform_pass_ends_at', 'platform_pass_applied_checkout_session_ids', 'profile_pdf_resume_parse_count'])]
+#[Fillable(['name', 'email', 'password', 'provider', 'provider_id', 'avatar', 'onboarded', 'notification_preferences', 'ai_preferences', 'platform_pass_plan', 'platform_pass_ends_at', 'notified_expiry_at', 'payment_failed_notified_at', 'platform_pass_applied_checkout_session_ids', 'profile_pdf_resume_parse_count'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable #implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use Billable, HasFactory, Notifiable, TwoFactorAuthenticatable;
@@ -37,6 +37,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'notification_preferences' => 'array',
             'ai_preferences' => 'array',
             'platform_pass_ends_at' => 'datetime',
+            'notified_expiry_at' => 'datetime',
+            'payment_failed_notified_at' => 'datetime',
             'platform_pass_applied_checkout_session_ids' => 'array',
             'profile_pdf_resume_parse_count' => 'integer',
         ];
@@ -92,6 +94,16 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(SupplementalEssay::class);
     }
 
+    public function jobTrackings(): HasMany
+    {
+        return $this->hasMany(JobTracking::class);
+    }
+
+    public function featureUsages(): HasMany
+    {
+        return $this->hasMany(FeatureUsage::class);
+    }
+
     public function notificationPreference(string $key): bool
     {
         $prefs = $this->notification_preferences ?? [];
@@ -109,6 +121,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_college_list' => true,
             'email_gap_fix' => false,
             'email_deadlines' => true,
+            'email_pass_expiry' => true,
+            'email_payment_failed' => true,
         ];
     }
 }

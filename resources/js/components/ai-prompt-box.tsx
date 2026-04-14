@@ -1,4 +1,5 @@
 import React from "react";
+import { usePage } from "@inertiajs/react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ArrowUp, Paperclip, Square, X, StopCircle, Globe, BrainIcon, FolderIcon, MicrophoneIcon } from "@phosphor-icons/react";
@@ -13,6 +14,7 @@ import {
   type PromptBoxCopy,
   type PromptBoxFeatures,
 } from "@/components/ai-prompt-box.config";
+import { PaywallModal } from "@/components/paywall-modal";
 
 export type { PromptBoxCopy, PromptBoxFeatures } from "@/components/ai-prompt-box.config";
 
@@ -412,6 +414,8 @@ function mergePromptBoxCopy(override?: Partial<PromptBoxCopy>): PromptBoxCopy {
 
 export interface PromptInputBoxProps {
   onSend?: (message: string, files?: File[]) => void;
+  /** Called when the user taps Stop while `isLoading` (e.g. abort the in-flight chat stream). */
+  onAbort?: () => void;
   isLoading?: boolean;
   placeholder?: string;
   className?: string;
@@ -424,12 +428,16 @@ export interface PromptInputBoxProps {
 export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxProps>((props, ref) => {
   const {
     onSend = () => {},
+    onAbort,
     isLoading = false,
     placeholder: placeholderProp,
     className,
     features: featuresProp,
     copy: copyProp,
   } = props;
+
+  const { isSubscribed } = usePage().props;
+  const hasPaidAccess = isSubscribed === true;
 
   const features = React.useMemo(() => mergePromptBoxFeatures(featuresProp), [featuresProp]);
   const copy = React.useMemo(() => mergePromptBoxCopy(copyProp), [copyProp]);
@@ -440,6 +448,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
   const [filePreviews, setFilePreviews] = React.useState<{ [key: string]: string }>({});
   const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
   const [isRecording, setIsRecording] = React.useState(false);
+  const [paywallOpen, setPaywallOpen] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(false);
   const [showThink, setShowThink] = React.useState(false);
   const [showCanvas, setShowCanvas] = React.useState(false);
@@ -546,6 +555,10 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
 
   const handleSubmit = () => {
     if (input.trim() || files.length > 0) {
+      if (!hasPaidAccess) {
+        setPaywallOpen(true);
+        return;
+      }
       let messagePrefix = "";
       if (features.searchMode && showSearch) messagePrefix = "[Search: ";
       else if (features.thinkMode && showThink) messagePrefix = "[Think: ";
@@ -561,6 +574,11 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
   const handleStartRecording = () => console.log("Started recording");
 
   const handleStopRecording = (duration: number) => {
+    if (!hasPaidAccess) {
+      setPaywallOpen(true);
+      setIsRecording(false);
+      return;
+    }
     console.log(`Stopped recording after ${duration} seconds`);
     setIsRecording(false);
     onSend(`[Voice message - ${duration} seconds]`, []);
@@ -826,11 +844,19 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                     : promptBoxStyles.primarySendIdle
               )}
               onClick={() => {
+                if (isLoading && onAbort) {
+                  onAbort();
+                  return;
+                }
                 if (isRecording) setIsRecording(false);
                 else if (hasContent) handleSubmit();
                 else if (features.voiceInput) setIsRecording(true);
               }}
-              disabled={(isLoading && !hasContent) || (!hasContent && !features.voiceInput)}
+              disabled={
+                isLoading
+                  ? !onAbort
+                  : !hasContent && !features.voiceInput
+              }
             >
               {isLoading ? (
                 <Square className="h-4 w-4 fill-primary-foreground animate-pulse" />
@@ -851,6 +877,8 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
         onClose={() => setSelectedImage(null)}
         enabled={features.imagePreviewModal}
       />
+
+      <PaywallModal open={paywallOpen} onOpenChange={setPaywallOpen} />
     </>
   );
 });

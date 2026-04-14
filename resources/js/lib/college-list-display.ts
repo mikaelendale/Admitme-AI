@@ -1,5 +1,14 @@
 export type FitTier = 'reach' | 'match' | 'safety';
 
+export type ApplicationStatus =
+    | 'not_started'
+    | 'researching'
+    | 'applying'
+    | 'submitted'
+    | 'accepted'
+    | 'rejected'
+    | 'waitlisted';
+
 export interface CollegeRow {
     id: string;
     name: string;
@@ -14,6 +23,8 @@ export interface CollegeRow {
     deadlineSort: number;
     applicationPortalUrl: string;
     admissionsCycleLabel: string;
+    applicationStatus: ApplicationStatus;
+    studentNotes: string;
 }
 
 export function tierLabel(tier: FitTier): string {

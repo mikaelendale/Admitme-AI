@@ -1,14 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePage } from '@inertiajs/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { QuotaExhaustedModal } from '@/components/quota-exhausted-modal';
 import { Button } from '@/components/ui/button';
 import { EssayStrengthScores } from '@/components/essay/EssayStrengthScores';
 import {
     buildLaravelJsonHeaders,
     readCsrfTokenFromMeta,
 } from '@/lib/laravelFetch';
+import { buildEssayRateLimitMessage } from '@/lib/essayRateLimitMessage';
 import { cn } from '@/lib/utils';
 import type { EssayRecentRunRow } from '@/components/essay-suite/run-types';
+import type { FeatureQuotasProps, QuotaFeatureDetail } from '@/types/feature-quotas';
 import type { EssayRoastPayload, EssayScoreOnlyPayload } from '@/types/essay';
 
 const ROAST_STAGES = [
@@ -21,12 +25,31 @@ const MIN_CHARS = 100;
 
 const MAX_CHARS = 8000;
 
+const ROAST_TEXT_STORAGE_KEY = 'admitme:essay-roast-text';
+
 type Props = {
     recentRuns: EssayRecentRunRow[];
 };
 
+function readRoastTextFromStorage(): string {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+    try {
+        return localStorage.getItem(ROAST_TEXT_STORAGE_KEY) ?? '';
+    } catch {
+        return '';
+    }
+}
+
 export function RoastScoreWorkspace({ recentRuns }: Props) {
-    const [text, setText] = useState('');
+    const { feature_quotas } = usePage<{ feature_quotas?: FeatureQuotasProps | null }>().props;
+    const roastQuota = feature_quotas?.features?.essay_roast;
+    const scoreQuota = feature_quotas?.features?.cliche_detector;
+    const roastBlocked = roastQuota?.remaining === 0;
+    const scoreBlocked = scoreQuota?.remaining === 0;
+
+    const [text, setText] = useState(() => readRoastTextFromStorage());
     const [phase, setPhase] = useState<'input' | 'results'>('input');
     const [roastBusy, setRoastBusy] = useState(false);
     const [scoreBusy, setScoreBusy] = useState(false);
@@ -34,6 +57,10 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
     const [roastPayload, setRoastPayload] = useState<EssayRoastPayload | null>(null);
     const [scorePayload, setScorePayload] = useState<EssayScoreOnlyPayload | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+    const [quotaModalOpen, setQuotaModalOpen] = useState(false);
+    const [quotaModalDetail, setQuotaModalDetail] = useState<QuotaFeatureDetail | null>(null);
+    const saveTextTimerRef = useRef<number | null>(null);
 
     const len = text.length;
     const wordCount = useMemo(() => {
@@ -56,8 +83,23 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
         return () => window.clearInterval(id);
     }, [roastBusy]);
 
+    const scheduleSaveRoastText = useCallback((value: string) => {
+        if (saveTextTimerRef.current !== null) {
+            window.clearTimeout(saveTextTimerRef.current);
+        }
+        saveTextTimerRef.current = window.setTimeout(() => {
+            saveTextTimerRef.current = null;
+            try {
+                localStorage.setItem(ROAST_TEXT_STORAGE_KEY, value);
+            } catch {
+                /* ignore */
+            }
+        }, 1000);
+    }, []);
+
     const loadFromRun = useCallback(async (runId: string) => {
         setError(null);
+        setRateLimitMessage(null);
         try {
             const res = await fetch(`/essay-suite/runs/${runId}`, { credentials: 'same-origin' });
             const data = (await res.json()) as { output_markdown?: string };
@@ -76,6 +118,7 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
 
     const postRoast = useCallback(async () => {
         setError(null);
+        setRateLimitMessage(null);
         setRoastBusy(true);
         setStageIdx(0);
         setScorePayload(null);
@@ -87,12 +130,29 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 body: JSON.stringify({ essay_text: text }),
             });
             const raw = await res.text();
-            let data: { payload?: EssayRoastPayload; message?: string; errors?: Record<string, string[]> } =
-                {};
+            let data: {
+                payload?: EssayRoastPayload;
+                message?: string;
+                errors?: Record<string, string[]>;
+                quota?: QuotaFeatureDetail;
+            } = {};
             try {
                 data = JSON.parse(raw) as typeof data;
             } catch {
                 /* ignore */
+            }
+            if (res.status === 429) {
+                setRateLimitMessage(
+                    typeof data.message === 'string' && data.message !== ''
+                        ? data.message
+                        : buildEssayRateLimitMessage('roast', res),
+                );
+                if (data.quota) {
+                    setQuotaModalDetail(data.quota);
+                    setQuotaModalOpen(true);
+                }
+
+                return;
             }
             if (res.status === 422) {
                 const msg =
@@ -111,6 +171,11 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 return;
             }
             if (data.payload) {
+                try {
+                    localStorage.removeItem(ROAST_TEXT_STORAGE_KEY);
+                } catch {
+                    /* ignore */
+                }
                 setRoastPayload(data.payload);
                 setPhase('results');
             }
@@ -123,6 +188,7 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
 
     const postScoreOnly = useCallback(async () => {
         setError(null);
+        setRateLimitMessage(null);
         setScoreBusy(true);
         setRoastPayload(null);
         try {
@@ -133,12 +199,29 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 body: JSON.stringify({ essay_text: text }),
             });
             const raw = await res.text();
-            let data: { payload?: EssayScoreOnlyPayload; message?: string; errors?: Record<string, string[]> } =
-                {};
+            let data: {
+                payload?: EssayScoreOnlyPayload;
+                message?: string;
+                errors?: Record<string, string[]>;
+                quota?: QuotaFeatureDetail;
+            } = {};
             try {
                 data = JSON.parse(raw) as typeof data;
             } catch {
                 /* ignore */
+            }
+            if (res.status === 429) {
+                setRateLimitMessage(
+                    typeof data.message === 'string' && data.message !== ''
+                        ? data.message
+                        : buildEssayRateLimitMessage('score', res),
+                );
+                if (data.quota) {
+                    setQuotaModalDetail(data.quota);
+                    setQuotaModalOpen(true);
+                }
+
+                return;
             }
             if (res.status === 422) {
                 setError(
@@ -156,6 +239,11 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 return;
             }
             if (data.payload) {
+                try {
+                    localStorage.removeItem(ROAST_TEXT_STORAGE_KEY);
+                } catch {
+                    /* ignore */
+                }
                 setScorePayload(data.payload);
                 setPhase('results');
             }
@@ -171,6 +259,7 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
         setRoastPayload(null);
         setScorePayload(null);
         setError(null);
+        setRateLimitMessage(null);
     }, []);
 
     const draftRuns = useMemo(
@@ -274,6 +363,7 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
     }
 
     return (
+        <>
         <div className="space-y-4">
             {draftRuns.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-2">
@@ -305,7 +395,11 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 <textarea
                     id="roast-essay-text"
                     value={text}
-                    onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
+                    onChange={(e) => {
+                        const v = e.target.value.slice(0, MAX_CHARS);
+                        setText(v);
+                        scheduleSaveRoastText(v);
+                    }}
                     rows={14}
                     className={cn(
                         'mt-1 w-full resize-y rounded-lg border border-border/60 bg-background p-3 text-sm',
@@ -317,6 +411,11 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                     {len} / {MAX_CHARS} characters · {wordCount} words
                     {len < MIN_CHARS ? ` · need ${MIN_CHARS - len} more` : ''}
                 </p>
+                {text.trim() ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Your text is saved locally as you type
+                    </p>
+                ) : null}
             </div>
 
             {roastBusy ? (
@@ -332,12 +431,35 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 </div>
             ) : null}
 
+            {rateLimitMessage ? (
+                <div
+                    className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100"
+                    role="status"
+                >
+                    {rateLimitMessage}
+                </div>
+            ) : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+            {roastQuota && roastQuota.limit != null && scoreQuota && scoreQuota.limit != null ? (
+                <p
+                    className={cn(
+                        'text-xs',
+                        roastQuota.warning || scoreQuota.warning
+                            ? 'text-amber-700 dark:text-amber-300'
+                            : 'text-muted-foreground',
+                    )}
+                >
+                    Essay roast: {roastQuota.used} of {roastQuota.limit} used · Cliché detector: {scoreQuota.used}{' '}
+                    of {scoreQuota.limit} used
+                    {feature_quotas?.window_days ? ` per ${feature_quotas.window_days} days` : ''}.
+                </p>
+            ) : null}
 
             <div className="flex flex-wrap gap-2">
                 <Button
                     type="button"
-                    disabled={len < MIN_CHARS || roastBusy || scoreBusy}
+                    disabled={len < MIN_CHARS || roastBusy || scoreBusy || roastBlocked}
                     onClick={() => void postRoast()}
                 >
                     Roast it
@@ -345,12 +467,19 @@ export function RoastScoreWorkspace({ recentRuns }: Props) {
                 <Button
                     type="button"
                     variant="outline"
-                    disabled={len < MIN_CHARS || roastBusy || scoreBusy}
+                    disabled={len < MIN_CHARS || roastBusy || scoreBusy || scoreBlocked}
                     onClick={() => void postScoreOnly()}
                 >
                     Score only (fast)
                 </Button>
             </div>
         </div>
+        <QuotaExhaustedModal
+            open={quotaModalOpen}
+            onOpenChange={setQuotaModalOpen}
+            quota={quotaModalDetail}
+            plan={feature_quotas?.plan}
+        />
+        </>
     );
 }

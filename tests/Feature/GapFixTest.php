@@ -106,10 +106,10 @@ class GapFixTest extends TestCase
             ->assertJsonValidationErrors(['college_list_school_ids.0']);
     }
 
-    public function test_generate_returns_429_when_rate_limited(): void
+    public function test_generate_returns_429_when_quota_exhausted(): void
     {
         Config::set('gap_fix.fake', true);
-        Config::set('gap_fix.generate_per_user_per_hour', 2);
+        Config::set('feature_limits.plans.paid.features.gap_analysis', 2);
 
         $user = User::factory()->create([
             'onboarded' => true,
@@ -141,7 +141,7 @@ class GapFixTest extends TestCase
             ->postJson(route('gap-fix.generate'), ['college_list_school_ids' => [$sid]])
             ->assertStatus(429);
 
-        $this->travel(61)->minutes();
+        $this->travel(31)->days();
 
         $this->actingAs($user)
             ->postJson(route('gap-fix.generate'), ['college_list_school_ids' => [$sid]])

@@ -60,10 +60,10 @@ class EssaySuiteExtensionsTest extends TestCase
             ->assertJsonValidationErrors(['essay_text']);
     }
 
-    public function test_roast_returns_429_when_rate_limited(): void
+    public function test_roast_returns_429_when_quota_exhausted(): void
     {
         Config::set('essay_suite.fake', true);
-        Config::set('essay_suite.roast_per_user_per_hour', 2);
+        Config::set('feature_limits.plans.paid.features.essay_roast', 2);
 
         $user = User::factory()->create([
             'onboarded' => true,

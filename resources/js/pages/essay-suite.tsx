@@ -4,6 +4,15 @@ import type { ReactNode } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { Buildings, Fire, Lightbulb, ListBullets, TextT } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
+import { PaywallModal } from '@/components/paywall-modal';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardDescription,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrainstormWorkspace } from '@/components/essay-suite/brainstorm-workspace';
 import { DraftWorkspace } from '@/components/essay-suite/draft-workspace';
@@ -58,12 +67,16 @@ export default function EssaySuite() {
         essay_why_school_drafts = [],
         supplements_nav_badge_count = 0,
         essay_defaults = {},
+        isSubscribed = false,
     } = usePage<EssaySuitePageProps>().props;
 
     const activeSchools = essay_active_schools ?? essay_schools;
     const defaultMentorTone = coerceMentorTone(essay_defaults.mentor_tone);
 
     const [mode, setMode] = useState<SuiteMode>('brainstorm');
+    const [paywallOpen, setPaywallOpen] = useState(false);
+
+    const hasPaidAccess = isSubscribed === true;
 
     const countLabel = useMemo(() => {
         if (mode === 'brainstorm') {
@@ -87,7 +100,12 @@ export default function EssaySuite() {
         <>
             <Head title="Essay suite" />
 
-            <div className="page-shell">
+            <div className="page-shell relative">
+                <div
+                    className={cn(
+                        !hasPaidAccess && 'pointer-events-none select-none blur-sm',
+                    )}
+                >
                 <header className="mb-4 space-y-1">
                     <h1 className="text-xl font-semibold tracking-tight text-foreground">
                         Essay suite
@@ -253,6 +271,31 @@ export default function EssaySuite() {
                         </div>
                     </TabsContent>
                 </Tabs>
+                </div>
+
+                {!hasPaidAccess ? (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-4 supports-backdrop-filter:backdrop-blur-[2px]">
+                        <Card className="pointer-events-auto w-full max-w-md border-border/80 shadow-lg">
+                            <CardHeader>
+                                <CardTitle>Essay suite requires an active plan</CardTitle>
+                                <CardDescription>
+                                    Unlock essay roasting, draft assistant, cliché detector and more
+                                </CardDescription>
+                            </CardHeader>
+                            <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                                <Button
+                                    type="button"
+                                    className="w-full sm:w-auto"
+                                    onClick={() => setPaywallOpen(true)}
+                                >
+                                    Unlock now
+                                </Button>
+                            </CardFooter>
+                        </Card>
+                    </div>
+                ) : null}
+
+                <PaywallModal open={paywallOpen} onOpenChange={setPaywallOpen} />
             </div>
         </>
     );

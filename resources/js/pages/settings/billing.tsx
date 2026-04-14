@@ -1,4 +1,6 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
+import { CircleNotch } from '@phosphor-icons/react';
+import { useState } from 'react';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,6 +99,33 @@ export default function Billing({
     const { errors } = usePage<{ errors: { billing?: string } }>().props;
     const { flash } = usePage<{ flash?: { status?: string } }>().props;
 
+    const [billingAction, setBillingAction] = useState<string | null>(null);
+    const billingBusy = billingAction !== null;
+
+    function visitOptions(key: string): {
+        preserveScroll: boolean;
+        onStart: () => void;
+        onFinish: () => void;
+    } {
+        return {
+            preserveScroll: true,
+            onStart: () => setBillingAction(key),
+            onFinish: () => setBillingAction(null),
+        };
+    }
+
+    function actionDisabled(
+        key: string,
+        processing: boolean,
+        extra?: boolean,
+    ): boolean {
+        return (
+            (extra ?? false) ||
+            processing ||
+            (billingBusy && billingAction !== key)
+        );
+    }
+
     return (
         <>
             <Head title="Plan & billing" />
@@ -192,13 +221,16 @@ export default function Billing({
                             <Form
                                 action="/settings/billing/portal"
                                 method="post"
-                                options={{ preserveScroll: true }}
+                                options={visitOptions('portal')}
                             >
                                 {({ processing }) => (
                                     <Button
                                         type="submit"
                                         variant="secondary"
-                                        disabled={processing}
+                                        disabled={actionDisabled(
+                                            'portal',
+                                            processing,
+                                        )}
                                     >
                                         {processing
                                             ? 'Opening…'
@@ -249,7 +281,7 @@ export default function Billing({
                                     <Form
                                         action="/settings/billing/checkout"
                                         method="post"
-                                        options={{ preserveScroll: true }}
+                                        options={visitOptions('sprint')}
                                         className="w-full"
                                     >
                                         {({ processing }) => (
@@ -263,16 +295,26 @@ export default function Billing({
                                                     type="submit"
                                                     className="w-full"
                                                     variant="secondary"
-                                                    disabled={
-                                                        processing ||
-                                                        !sprint_checkout_configured
-                                                    }
+                                                    disabled={actionDisabled(
+                                                        'sprint',
+                                                        processing,
+                                                        !sprint_checkout_configured,
+                                                    )}
                                                 >
-                                                    {processing
-                                                        ? 'Redirecting…'
-                                                        : sprint_checkout_configured
-                                                          ? 'Checkout 90-day pass'
-                                                          : 'Not configured'}
+                                                    {processing ? (
+                                                        <>
+                                                            <CircleNotch
+                                                                className="mr-2 inline size-4 animate-spin"
+                                                                aria-hidden
+                                                            />
+                                                            Redirecting to
+                                                            checkout...
+                                                        </>
+                                                    ) : sprint_checkout_configured ? (
+                                                        'Checkout 90-day pass'
+                                                    ) : (
+                                                        'Not configured'
+                                                    )}
                                                 </Button>
                                             </>
                                         )}
@@ -389,9 +431,9 @@ export default function Billing({
                                                 <Form
                                                     action="/settings/billing/swap"
                                                     method="post"
-                                                    options={{
-                                                        preserveScroll: true,
-                                                    }}
+                                                    options={visitOptions(
+                                                        `swap:${plan.key}`,
+                                                    )}
                                                     className="w-full"
                                                 >
                                                     {({ processing }) => (
@@ -407,13 +449,22 @@ export default function Billing({
                                                             <Button
                                                                 type="submit"
                                                                 className="w-full"
-                                                                disabled={
-                                                                    processing
-                                                                }
+                                                                disabled={actionDisabled(
+                                                                    `swap:${plan.key}`,
+                                                                    processing,
+                                                                )}
                                                             >
-                                                                {processing
-                                                                    ? 'Updating…'
-                                                                    : label}
+                                                                {processing ? (
+                                                                    <>
+                                                                        <CircleNotch
+                                                                            className="mr-2 inline size-4 animate-spin"
+                                                                            aria-hidden
+                                                                        />
+                                                                        Updating…
+                                                                    </>
+                                                                ) : (
+                                                                    label
+                                                                )}
                                                             </Button>
                                                         </>
                                                     )}
@@ -422,9 +473,9 @@ export default function Billing({
                                                 <Form
                                                     action="/settings/billing/portal"
                                                     method="post"
-                                                    options={{
-                                                        preserveScroll: true,
-                                                    }}
+                                                    options={visitOptions(
+                                                        'portal',
+                                                    )}
                                                     className="w-full"
                                                 >
                                                     {({ processing }) => (
@@ -432,9 +483,10 @@ export default function Billing({
                                                             type="submit"
                                                             className="w-full"
                                                             variant="secondary"
-                                                            disabled={
-                                                                processing
-                                                            }
+                                                            disabled={actionDisabled(
+                                                                'portal',
+                                                                processing,
+                                                            )}
                                                         >
                                                             {processing
                                                                 ? 'Opening…'
@@ -446,9 +498,9 @@ export default function Billing({
                                                 <Form
                                                     action="/settings/billing/subscribe"
                                                     method="post"
-                                                    options={{
-                                                        preserveScroll: true,
-                                                    }}
+                                                    options={visitOptions(
+                                                        `subscribe:${plan.key}`,
+                                                    )}
                                                     className="w-full"
                                                 >
                                                     {({ processing }) => (
@@ -463,9 +515,10 @@ export default function Billing({
                                                             <Button
                                                                 type="submit"
                                                                 className="w-full"
-                                                                disabled={
-                                                                    processing
-                                                                }
+                                                                disabled={actionDisabled(
+                                                                    `subscribe:${plan.key}`,
+                                                                    processing,
+                                                                )}
                                                                 variant={
                                                                     plan.key ===
                                                                     'pro_annual'
@@ -473,12 +526,22 @@ export default function Billing({
                                                                         : 'default'
                                                                 }
                                                             >
-                                                                {processing
-                                                                    ? 'Redirecting…'
-                                                                    : subscribeCycle ===
-                                                                        'annual'
-                                                                      ? 'Subscribe — $150/year'
-                                                                      : 'Subscribe — $15/month'}
+                                                                {processing ? (
+                                                                    <>
+                                                                        <CircleNotch
+                                                                            className="mr-2 inline size-4 animate-spin"
+                                                                            aria-hidden
+                                                                        />
+                                                                        Redirecting
+                                                                        to
+                                                                        checkout...
+                                                                    </>
+                                                                ) : subscribeCycle ===
+                                                                  'annual' ? (
+                                                                    'Subscribe — $150/year'
+                                                                ) : (
+                                                                    'Subscribe — $15/month'
+                                                                )}
                                                             </Button>
                                                         </>
                                                     )}
@@ -518,7 +581,7 @@ export default function Billing({
                         <Form
                             action="/settings/billing/portal"
                             method="post"
-                            options={{ preserveScroll: true }}
+                            options={visitOptions('portal')}
                             className="w-full "
                         >
                             {({ processing }) => (
@@ -526,7 +589,10 @@ export default function Billing({
                                     type="submit"
                                     variant="outline"
                                     className="w-full"
-                                    disabled={processing}
+                                    disabled={actionDisabled(
+                                        'portal',
+                                        processing,
+                                    )}
                                 >
                                     {processing
                                         ? 'Opening…'

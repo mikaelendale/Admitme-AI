@@ -18,7 +18,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -79,6 +78,9 @@ class OnboardingController extends Controller
             ?? 'monthly';
         $planStr = is_string($plan) ? $plan : null;
         $cycleStr = is_string($billingCycle) ? $billingCycle : 'monthly';
+        $billingSkipped = $session->status === 'completed'
+            && ! $checkoutVerified
+            && ! $user->subscribed('default');
 
         return Inertia::render('onboarding', [
             'sessionUuid' => $session->session_uuid,
@@ -86,6 +88,7 @@ class OnboardingController extends Controller
             'initialStep' => max(1, min(5, $lastStepKey)),
             'needsAgeGate' => $needsAgeGate,
             'checkoutVerified' => $checkoutVerified,
+            'billingSkipped' => $billingSkipped,
             'checkoutCancelled' => $request->query('checkout') === 'cancel',
             'selectedBilling' => [
                 'plan' => $planStr,
@@ -103,6 +106,11 @@ class OnboardingController extends Controller
             'hasActiveSubscription' => $user->subscribed('default'),
             'maxProfileWords' => config('admissions.max_profile_words'),
         ]);
+    }
+
+    public function refreshForOnboarding(Request $request): RedirectResponse
+    {
+        return redirect()->route('onboarding');
     }
 
     /**
@@ -298,13 +306,47 @@ class OnboardingController extends Controller
                 ->where('question_key', 'billing.checkout_verified')
                 ->exists();
 
-        if (! $billingOk) {
-            throw ValidationException::withMessages([
-                'billing' => 'Complete checkout before continuing.',
+        $session->update(['last_step_key' => '5']);
+    }
+
+    public function skipBilling(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        if ($user->onboarded) {
+            return redirect()->route('dashboard');
+        }
+
+        $session = $this->resolveInProgressSession($user->id);
+
+        $hasProfileText = OnboardingResponse::query()
+            ->where('onboarding_session_id', $session->id)
+            ->where('question_key', 'profile.freeform_text')
+            ->whereNotNull('answer_text')
+            ->where('answer_text', '!=', '')
+            ->exists();
+
+        if (! $hasProfileText) {
+            return back()->withErrors([
+                'onboarding' => 'Please complete your profile text before skipping billing.',
             ]);
         }
 
-        $session->update(['last_step_key' => '5']);
+        $profile = OnboardingProfile::query()->where('user_id', $user->id)->first();
+        if ($profile) {
+            $profile->update(['status' => 'completed']);
+        }
+
+        $session->update([
+            'status' => 'completed',
+            'completed_at' => now(),
+            'last_step_key' => '5',
+        ]);
+
+        $user->forceFill(['onboarded' => true])->save();
+
+        BuildUserAiContextJob::dispatch($user->id, false);
+
+        return redirect()->route('dashboard');
     }
 
     private function billingPlanLabel(?string $plan, string $billingCycle): string
@@ -395,22 +437,9 @@ class OnboardingController extends Controller
             ->where('answer_text', '!=', '')
             ->exists();
 
-        $checkoutOk = OnboardingResponse::query()
-            ->where('onboarding_session_id', $session->id)
-            ->where('question_key', 'billing.checkout_verified')
-            ->exists();
-
-        $billingOk = $user->subscribed('default') || $checkoutOk;
-
         if (! $hasProfileText) {
             return back()->withErrors([
                 'onboarding' => 'Please complete your profile text before finishing.',
-            ]);
-        }
-
-        if (! $billingOk) {
-            return back()->withErrors([
-                'onboarding' => 'Please complete checkout before finishing onboarding.',
             ]);
         }
 

@@ -7,6 +7,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Attributes\Model;
 use Laravel\Ai\Attributes\Provider;
+use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Enums\Lab;
@@ -15,6 +16,7 @@ use Stringable;
 
 #[Provider(Lab::OpenAI)]
 #[Model('gpt-5-nano')]
+#[Timeout(240)]
 class CouncilJudgeAgent implements Agent, HasStructuredOutput
 {
     use Promptable;
@@ -34,6 +36,8 @@ For EACH candidate in the batch, output a verdict:
 - discard: not a responsible recommendation for this profile this cycle.
 
 honest_blurb: one or two sentences — candid, specific, no empty reassurance. Do not fabricate precise acceptance rates or deadlines; use null for unknown stats in optional fields.
+
+If you lack enough signal to judge fit responsibly for a candidate, prefer verdict **discard** (or **debate** if it is borderline) and say what data is missing in honest_blurb — do not guess statistics or outcomes.
 
 Deadlines (ea_deadline, ed_deadline, rd_deadline): MUST be for the current/upcoming application cycle ({$cycle}) when you can infer them from the candidate context. Never invent last year's dates from memory — use null if you cannot verify a current date.
 

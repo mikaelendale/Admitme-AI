@@ -29,9 +29,24 @@ function slugifyHeading(text: string): string {
         .replace(/(^-|-$)/g, '');
 }
 
+function ExternalLinkIcon() {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            className="mb-0.5 ml-1 inline-block size-3 shrink-0 opacity-60"
+            aria-hidden
+        >
+            <path d="M6.22 8.72a.75.75 0 0 0 1.06 1.06l5.22-5.22v1.69a.75.75 0 0 0 1.5 0v-3.5a.75.75 0 0 0-.75-.75h-3.5a.75.75 0 0 0 0 1.5h1.69L6.22 8.72Z" />
+            <path d="M3.5 6.75c0-.69.56-1.25 1.25-1.25H7A.75.75 0 0 0 7 4H4.75A2.75 2.75 0 0 0 2 6.75v4.5A2.75 2.75 0 0 0 4.75 14h4.5A2.75 2.75 0 0 0 12 11.25V9a.75.75 0 0 0-1.5 0v2.25c0 .69-.56 1.25-1.25 1.25h-4.5c-.69 0-1.25-.56-1.25-1.25v-4.5Z" />
+        </svg>
+    );
+}
+
 const proseComponents: Components = {
     h1: ({ children }) => (
-        <h1 className="mb-6 text-2xl font-bold tracking-tight text-foreground first:mt-0 sm:text-3xl">
+        <h1 className="mb-4 mt-6 text-xl font-bold tracking-tight text-foreground first:mt-0 sm:text-2xl">
             {children}
         </h1>
     ),
@@ -39,48 +54,45 @@ const proseComponents: Components = {
         const slug = slugifyHeading(textFromChildren(children));
 
         return (
-            <div className="mb-6 mt-10 first:mt-0">
-                <h2
-                    id={slug || undefined}
-                    className="mb-3 scroll-mt-20 text-xl font-bold text-foreground sm:text-2xl"
-                >
-                    {children}
-                </h2>
-                <hr className="border-border" />
-            </div>
+            <h2
+                id={slug || undefined}
+                className="mb-3 mt-8 scroll-mt-20 border-b border-border/40 pb-2 text-lg font-bold text-foreground first:mt-0 sm:text-xl"
+            >
+                {children}
+            </h2>
         );
     },
     h3: ({ children }) => (
-        <h3 className="mb-3 mt-8 text-lg font-semibold text-foreground first:mt-0 sm:text-xl">
+        <h3 className="mb-2 mt-6 text-base font-semibold text-foreground first:mt-0 sm:text-lg">
             {children}
         </h3>
     ),
     h4: ({ children }) => (
-        <h4 className="mb-2 mt-6 text-base font-semibold text-foreground sm:text-lg">{children}</h4>
+        <h4 className="mb-1.5 mt-4 text-sm font-semibold text-foreground sm:text-base">{children}</h4>
     ),
-    p: ({ children }) => <p className="mb-4 leading-relaxed text-muted-foreground">{children}</p>,
+    p: ({ children }) => <p className="mb-3 leading-relaxed text-foreground/90 last:mb-0">{children}</p>,
     ul: ({ children }) => (
-        <ul className="mb-6 list-disc space-y-2 pl-6 marker:text-primary">{children}</ul>
+        <ul className="mb-4 list-disc space-y-1.5 pl-5 marker:text-primary/70">{children}</ul>
     ),
     ol: ({ children }) => (
-        <ol className="mb-6 list-decimal space-y-2 pl-6 marker:font-medium marker:text-muted-foreground">
+        <ol className="mb-4 list-decimal space-y-1.5 pl-5 marker:font-medium marker:text-muted-foreground">
             {children}
         </ol>
     ),
     li: ({ children }) => (
-        <li className="leading-relaxed text-muted-foreground [&>p]:mb-0 [&>ul]:mt-2 [&>ol]:mt-2">
+        <li className="leading-relaxed text-foreground/90 [&>p]:mb-0 [&>ul]:mt-1.5 [&>ol]:mt-1.5">
             {children}
         </li>
     ),
     strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-    em: ({ children }) => <em className="italic text-muted-foreground">{children}</em>,
+    em: ({ children }) => <em className="italic text-foreground/80">{children}</em>,
     code: ({ className, children, ...props }) => {
         const isBlock = typeof className === 'string' && className.includes('language-');
 
         if (isBlock) {
             return (
                 <code
-                    className={`block font-mono text-sm leading-relaxed text-foreground ${className ?? ''}`}
+                    className={`block font-mono text-[13px] leading-relaxed text-foreground ${className ?? ''}`}
                     {...props}
                 >
                     {children}
@@ -90,7 +102,7 @@ const proseComponents: Components = {
 
         return (
             <code
-                className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground"
+                className="rounded-md bg-muted/80 px-1.5 py-0.5 font-mono text-[13px] text-foreground"
                 {...props}
             >
                 {children}
@@ -98,38 +110,43 @@ const proseComponents: Components = {
         );
     },
     pre: ({ children }) => (
-        <pre className="mb-6 overflow-x-auto rounded-lg border border-border/60 bg-muted p-4 [&>code]:bg-transparent [&>code]:p-0">
+        <pre className="mb-4 overflow-x-auto rounded-lg border border-border/50 bg-muted/60 p-3 text-sm [&>code]:bg-transparent [&>code]:p-0">
             {children}
         </pre>
     ),
-    a: ({ href, children }) => (
-        <a
-            href={href}
-            className="text-primary underline-offset-4 hover:underline"
-            target="_blank"
-            rel="noopener noreferrer"
-        >
-            {children}
-        </a>
-    ),
+    a: ({ href, children }) => {
+        const isExternal = href && (href.startsWith('http://') || href.startsWith('https://'));
+
+        return (
+            <a
+                href={href}
+                className="inline-flex items-baseline gap-0 font-medium text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary/80"
+                target={isExternal ? '_blank' : undefined}
+                rel={isExternal ? 'noopener noreferrer' : undefined}
+            >
+                {children}
+                {isExternal && <ExternalLinkIcon />}
+            </a>
+        );
+    },
     blockquote: ({ children }) => (
-        <blockquote className="mb-6 border-l-4 border-primary pl-4 italic text-muted-foreground">
+        <blockquote className="mb-4 rounded-r-lg border-l-3 border-primary/60 bg-primary/5 py-2 pl-4 pr-3 text-foreground/80 [&>p]:mb-1 [&>p:last-child]:mb-0">
             {children}
         </blockquote>
     ),
-    hr: () => <hr className="mb-6 border-border" />,
+    hr: () => <hr className="my-5 border-border/40" />,
     table: ({ children }) => (
-        <div className="mb-6 overflow-x-auto rounded-lg border border-border/60">
+        <div className="mb-4 overflow-x-auto rounded-lg border border-border/50">
             <table className="w-full min-w-[16rem] border-collapse text-sm">{children}</table>
         </div>
     ),
-    thead: ({ children }) => <thead className="border-b border-border bg-muted/50">{children}</thead>,
-    tbody: ({ children }) => <tbody className="divide-y divide-border/60">{children}</tbody>,
-    tr: ({ children }) => <tr>{children}</tr>,
+    thead: ({ children }) => <thead className="border-b border-border bg-muted/40">{children}</thead>,
+    tbody: ({ children }) => <tbody className="divide-y divide-border/40">{children}</tbody>,
+    tr: ({ children }) => <tr className="transition-colors hover:bg-muted/20">{children}</tr>,
     th: ({ children }) => (
-        <th className="px-3 py-2 text-left font-semibold text-foreground">{children}</th>
+        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</th>
     ),
-    td: ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
+    td: ({ children }) => <td className="px-3 py-2 text-foreground/90">{children}</td>,
 };
 
 type Props = {
@@ -137,10 +154,6 @@ type Props = {
     className?: string;
 };
 
-/**
- * Renders markdown with typography tuned for assistant output and legal-style docs.
- * Uses GFM (tables, strikethrough, task lists) where applicable.
- */
 export function ProseMarkdown({ content, className }: Props) {
     return (
         <div className={className}>

@@ -173,40 +173,43 @@ class MentorChatConversation
                     $name = $call['name'] ?? null;
                     if ($name && is_string($name)) {
                         $label = match ($name) {
-                            'GetStudentAdmissionContextTool' => 'Reading your profile…',
-                            'GetStudentCollegeList' => 'Loading your college list…',
-                            'StartEssayRunTool' => 'Starting essay generation…',
-                            'StartGapFixTool' => 'Running gap analysis…',
-                            'StartEssayRoastTool' => 'Roasting your essay…',
-                            'StartWhyThisSchoolTool' => 'Writing Why This School draft…',
-                            'StartCollegeListCouncilJobTool' => 'Starting college list council…',
-                            'RunCollegeListAgentTool' => 'Building your college list…',
-                            'UpsertStudentCollegeList' => 'Updating your list…',
-                            'GetCollegeListRunArtifactsTool' => 'Loading council results…',
-                            default => "Thinking ({$name})…",
+                            'GetStudentAdmissionContextTool' => 'Reading your profile',
+                            'GetStudentCollegeList' => 'Loading your college list',
+                            'StartEssayRunTool' => 'Starting essay',
+                            'StartGapFixTool' => 'Analyzing gaps',
+                            'StartEssayRoastTool' => 'Roasting your essay',
+                            'StartWhyThisSchoolTool' => 'Drafting Why This School',
+                            'StartCollegeListCouncilJobTool' => 'Building your list',
+                            'RunCollegeListAgentTool' => 'Building your list',
+                            'UpsertStudentCollegeList' => 'Updating your list',
+                            'GetCollegeListRunArtifactsTool' => 'Checking results',
+                            'WebSearch', 'web_search' => 'Searched the web',
+                            default => 'Working on it',
+                        };
+                        $icon = match ($name) {
+                            'GetStudentAdmissionContextTool' => 'profile',
+                            'GetStudentCollegeList' => 'list',
+                            'StartEssayRunTool' => 'essay',
+                            'StartGapFixTool' => 'gap',
+                            'StartEssayRoastTool' => 'roast',
+                            'StartWhyThisSchoolTool' => 'essay',
+                            'StartCollegeListCouncilJobTool', 'RunCollegeListAgentTool' => 'council',
+                            'UpsertStudentCollegeList', 'GetCollegeListRunArtifactsTool' => 'list',
+                            'WebSearch', 'web_search' => 'search',
+                            default => 'default',
                         };
                         $activity[] = [
                             'id' => uniqid('act_', true),
                             'text' => $label,
+                            'icon' => $icon,
+                            'status' => 'done',
                         ];
                     }
                 }
             }
 
-            if ($content === '') {
-                if (is_array($toolCalls) && $toolCalls !== []) {
-                    $names = collect($toolCalls)
-                        ->pluck('name')
-                        ->filter()
-                        ->unique()
-                        ->values()
-                        ->implode(', ');
-                    $content = $names !== ''
-                        ? "[Used tools: {$names}]"
-                        : '[Assistant used tools]';
-                } else {
-                    $content = '';
-                }
+            if ($content === '' && is_array($toolCalls) && $toolCalls !== []) {
+                $content = '';
             }
 
             if ($content === '' && $activity === []) {

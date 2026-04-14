@@ -4,18 +4,17 @@ namespace App\Providers;
 
 use App\Ai\Storage\AdmitMeConversationStore;
 use App\Listeners\LogLaravelAiSdkTelemetry;
+use App\Listeners\NotifyUserOfInvoicePaymentFailure;
 use App\Listeners\RecordOnboardingCheckoutFromStripeWebhook;
 use App\Services\Billing\ProfileResumePdfImportLimiter;
 use App\Services\CollegeListCouncil\CollegeListCouncilOrchestratorContract;
 use App\Services\CollegeListCouncil\FakeCollegeListCouncilOrchestrator;
 use App\Services\CollegeListCouncil\RealCollegeListCouncilOrchestrator;
+use App\Support\FeatureQuotaManager;
 use Carbon\CarbonImmutable;
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Ai\Contracts\ConversationStore;
@@ -40,6 +39,8 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(ProfileResumePdfImportLimiter::class, fn (): ProfileResumePdfImportLimiter => ProfileResumePdfImportLimiter::fromConfig());
 
+        $this->app->singleton(FeatureQuotaManager::class, fn (): FeatureQuotaManager => new FeatureQuotaManager);
+
         $this->app->bind(CollegeListCouncilOrchestratorContract::class, function ($app): CollegeListCouncilOrchestratorContract {
             if (config('college_list_council.fake_phases')) {
                 return $app->make(FakeCollegeListCouncilOrchestrator::class);
@@ -56,37 +57,8 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
-        RateLimiter::for('gap-fix-generate', function (Request $request): Limit {
-            $uid = (string) ($request->user()?->id ?? $request->ip());
-
-            return Limit::perHour((int) config('gap_fix.generate_per_user_per_hour', 4))->by('gap-fix-gen:'.$uid);
-        });
-
-        RateLimiter::for('gap-fix-what-if-explain', function (Request $request): Limit {
-            $uid = (string) ($request->user()?->id ?? $request->ip());
-
-            return Limit::perHour((int) config('gap_fix.what_if_explain_per_user_per_hour', 10))->by('gap-fix-wi:'.$uid);
-        });
-
-        RateLimiter::for('essay-roast', function (Request $request): Limit {
-            $uid = (string) ($request->user()?->id ?? $request->ip());
-
-            return Limit::perHour((int) config('essay_suite.roast_per_user_per_hour', 5))->by('essay-roast:'.$uid);
-        });
-
-        RateLimiter::for('essay-why-school', function (Request $request): Limit {
-            $uid = (string) ($request->user()?->id ?? $request->ip());
-
-            return Limit::perHour((int) config('essay_suite.why_school_per_user_per_hour', 10))->by('essay-why:'.$uid);
-        });
-
-        RateLimiter::for('essay-score-only', function (Request $request): Limit {
-            $uid = (string) ($request->user()?->id ?? $request->ip());
-
-            return Limit::perHour((int) config('essay_suite.score_only_per_user_per_hour', 10))->by('essay-score:'.$uid);
-        });
-
         Event::listen(WebhookReceived::class, RecordOnboardingCheckoutFromStripeWebhook::class);
+        Event::listen(WebhookReceived::class, NotifyUserOfInvoicePaymentFailure::class);
 
         $telemetry = LogLaravelAiSdkTelemetry::class;
         Event::listen(PromptingAgent::class, [$telemetry, 'handlePromptingAgent']);

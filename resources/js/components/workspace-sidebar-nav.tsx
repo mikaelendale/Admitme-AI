@@ -132,7 +132,7 @@ export function WorkspaceSidebarNavButtons({
                         <item.icon size={20} className="shrink-0" />
                         {showBadge ? (
                             <span
-                                className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground shadow-sm"
+                                className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold leading-none text-primary-foreground shadow-sm"
                                 aria-hidden
                             >
                                 {badgeCount > 9 ? '9+' : badgeCount}

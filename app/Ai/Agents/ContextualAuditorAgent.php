@@ -7,6 +7,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Attributes\Model;
 use Laravel\Ai\Attributes\Provider;
+use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Enums\Lab;
@@ -15,6 +16,7 @@ use Stringable;
 
 #[Provider(Lab::OpenAI)]
 #[Model('gpt-5-nano')]
+#[Timeout(120)]
 class ContextualAuditorAgent implements Agent, HasStructuredOutput
 {
     use Promptable;

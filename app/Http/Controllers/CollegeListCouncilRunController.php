@@ -8,6 +8,7 @@ use App\Http\Requests\StoreCollegeListCouncilRunRequest;
 use App\Jobs\RunCollegeListCouncilJob;
 use App\Models\CollegeListRun;
 use App\Services\CollegeListCouncil\CollegeListCouncilRunStarter;
+use App\Support\FeatureQuotaManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -40,6 +41,8 @@ class CollegeListCouncilRunController extends Controller
         } catch (ConflictHttpException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
+
+        app(FeatureQuotaManager::class)->record($user, 'college_list');
 
         return response()->json([
             'run_id' => (string) $run->id,

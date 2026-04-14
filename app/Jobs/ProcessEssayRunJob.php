@@ -6,6 +6,7 @@ use App\Ai\Agents\EssayBrainstormAgent;
 use App\Ai\Agents\EssayDraftCrafterAgent;
 use App\Models\CollegeListSchool;
 use App\Models\EssayRun;
+use App\Models\JobTracking;
 use App\Models\User;
 use App\Notifications\EssayRunCompletedNotification;
 use App\Notifications\EssayRunFailedNotification;
@@ -20,9 +21,24 @@ class ProcessEssayRunJob implements ShouldQueue
 {
     use Queueable;
 
+    /** Seconds before the queue worker terminates the job (LLM calls can be slow). */
+    public int $timeout = 120;
+
+    public int $tries = 2;
+
+    public ?int $trackingId = null;
+
     public function __construct(
         public string $essayRunId,
     ) {}
+
+    /**
+     * @return array<int, int>
+     */
+    public function backoff(): array
+    {
+        return [30, 90];
+    }
 
     public function handle(): void
     {
@@ -42,6 +58,8 @@ class ProcessEssayRunJob implements ShouldQueue
 
             return;
         }
+
+        $tracking = $this->startTracking((int) $user->id);
 
         $school = $run->collegeListSchool;
         if ($school === null) {
@@ -129,12 +147,113 @@ class ProcessEssayRunJob implements ShouldQueue
                     'user_id' => $user->id,
                 ]);
             }
+
+            $this->completeTracking($tracking);
         } catch (Throwable $e) {
             Log::error('ProcessEssayRunJob failed', [
                 'essay_run_id' => $run->id,
                 'exception' => $e->getMessage(),
             ]);
+            $this->failTrackingRecord($tracking, $e->getMessage());
             $this->failRun($run, Str::limit($e->getMessage(), 2000));
+        }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        Log::error('ProcessEssayRunJob permanently failed', [
+            'essay_run_id' => $this->essayRunId,
+            'tracking_id' => $this->trackingId,
+            'exception' => $exception::class,
+            'error' => $exception->getMessage(),
+        ]);
+
+        $tracking = $this->trackingId !== null
+            ? JobTracking::query()->find($this->trackingId)
+            : null;
+
+        if ($tracking !== null && $tracking->status !== JobTracking::STATUS_FAILED) {
+            $tracking->forceFill([
+                'status' => JobTracking::STATUS_FAILED,
+                'failed_at' => now(),
+                'error_message' => mb_strimwidth($exception->getMessage(), 0, 2000, '…'),
+            ])->save();
+        }
+
+        try {
+            $run = EssayRun::query()->find($this->essayRunId);
+            if ($run !== null && ! $run->isTerminal()) {
+                $this->failRun($run, Str::limit($exception->getMessage(), 2000));
+            }
+
+            if ($run !== null) {
+                $user = User::query()->find($run->user_id);
+                if ($user !== null) {
+                    $run->loadMissing('collegeListSchool');
+                    $user->notify(new EssayRunFailedNotification(
+                        $run->run_type,
+                        $run->collegeListSchool->school_name ?? 'your school',
+                    ));
+                }
+            }
+        } catch (Throwable $e) {
+            Log::warning('ProcessEssayRunJob: failed() notification error', [
+                'essay_run_id' => $this->essayRunId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function startTracking(int $userId): ?JobTracking
+    {
+        try {
+            $tracking = JobTracking::query()->create([
+                'user_id' => $userId,
+                'job_type' => JobTracking::TYPE_ESSAY_RUN,
+                'status' => JobTracking::STATUS_RUNNING,
+                'payload' => ['essay_run_id' => $this->essayRunId],
+                'started_at' => now(),
+            ]);
+            $this->trackingId = $tracking->id;
+
+            return $tracking;
+        } catch (Throwable $e) {
+            Log::warning('ProcessEssayRunJob: could not create tracking record', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    private function completeTracking(?JobTracking $tracking): void
+    {
+        if ($tracking === null) {
+            return;
+        }
+
+        try {
+            $tracking->forceFill([
+                'status' => JobTracking::STATUS_COMPLETED,
+                'completed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            Log::warning('ProcessEssayRunJob: could not update tracking to completed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    private function failTrackingRecord(?JobTracking $tracking, string $message): void
+    {
+        if ($tracking === null) {
+            return;
+        }
+
+        try {
+            $tracking->forceFill([
+                'status' => JobTracking::STATUS_FAILED,
+                'failed_at' => now(),
+                'error_message' => mb_strimwidth($message, 0, 2000, '…'),
+            ])->save();
+        } catch (Throwable $e) {
+            Log::warning('ProcessEssayRunJob: could not update tracking to failed', ['error' => $e->getMessage()]);
         }
     }
 

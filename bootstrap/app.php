@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CheckFeatureQuota;
 use App\Http\Middleware\EnsurePlatformAccess;
 use App\Http\Middleware\EnsureUserIsOnboarded;
 use App\Http\Middleware\HandleAppearance;
@@ -44,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'onboarded' => EnsureUserIsOnboarded::class,
             'platform.access' => EnsurePlatformAccess::class,
+            'quota' => CheckFeatureQuota::class,
         ]);
 
         $middleware->web(append: [

@@ -1,14 +1,19 @@
 'use client';
 
-import { Form, Head, router, usePage, usePoll } from '@inertiajs/react';
+import { Form, Head, router, useForm, usePage, usePoll } from '@inertiajs/react';
 import {
     CaretLeft,
     CaretRight,
+    CircleNotch,
     Upload,
     Star,
     Lightning,
     ListChecksIcon,
     RocketLaunch,
+    Lock,
+    ListBullets,
+    Wrench,
+    PencilLine,
 } from '@phosphor-icons/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
@@ -69,7 +74,7 @@ const STEPS = [
         id: 4,
         title: 'Choose your AdmitMe plan',
         description:
-            'No free tier. Choose the $1 trial, 90-day pass, or Pro subscription.',
+            'Billing is optional during onboarding. Pick a plan now, or skip and finish setup first.',
         icon: Lightning,
     },
     {
@@ -268,6 +273,7 @@ export type OnboardingPageProps = {
     initialStep: number;
     needsAgeGate: boolean;
     checkoutVerified: boolean;
+    billingSkipped: boolean;
     checkoutCancelled: boolean;
     selectedBilling: {
         plan: string | null;
@@ -293,6 +299,7 @@ export default function OnboardingPage({
     initialStep,
     needsAgeGate,
     checkoutVerified,
+    billingSkipped,
     checkoutCancelled,
     selectedBilling,
     profile,
@@ -314,6 +321,9 @@ export default function OnboardingPage({
     const [noCapError, setNoCapError] = useState<string | null>(null);
     const [noCapFinished, setNoCapFinished] = useState(false);
     const [noCapStreamKey, setNoCapStreamKey] = useState(0);
+    const [noCapLoadingMessage, setNoCapLoadingMessage] = useState<string>(
+        'Generating your read… results appear here as soon as they are ready.',
+    );
     const [recurringPlanCycle, setRecurringPlanCycle] = useState<
         'monthly' | 'annual'
     >('monthly');
@@ -328,13 +338,35 @@ export default function OnboardingPage({
     );
     const [stepProcessing, setStepProcessing] = useState(false);
 
+    const checkoutForm = useForm({
+        plan: 'trial' as 'trial' | 'sprint' | 'pro',
+        billing_cycle: 'monthly' as 'monthly' | 'annual',
+    });
+    const [checkoutPlanBusy, setCheckoutPlanBusy] = useState<
+        'trial' | 'sprint' | 'pro' | null
+    >(null);
+    const checkoutBusy = checkoutPlanBusy !== null;
+
+    function submitCheckoutPlan(plan: 'trial' | 'sprint' | 'pro'): void {
+        checkoutForm.clearErrors();
+        checkoutForm.setData({
+            plan,
+            billing_cycle: plan === 'pro' ? recurringPlanCycle : 'monthly',
+        });
+        checkoutForm.post(OnboardingController.checkout.url(), {
+            preserveScroll: true,
+            onStart: () => setCheckoutPlanBusy(plan),
+            onFinish: () => setCheckoutPlanBusy(null),
+        });
+    }
+
     useEffect(() => {
         setStep(initialStep);
     }, [initialStep]);
 
     const currentStep = STEPS[step - 1];
 
-    const billingComplete = checkoutVerified || hasActiveSubscription;
+    const billingComplete = checkoutVerified || hasActiveSubscription || billingSkipped;
 
     const hasServerPlanSelection = Boolean(selectedBilling.plan);
     const serverBillingCycle = selectedBilling.billing_cycle;
@@ -457,11 +489,43 @@ export default function OnboardingPage({
         }
 
         let cancelled = false;
+        let timeoutId: number | undefined;
+        let message15sId: number | undefined;
+        let message30sId: number | undefined;
 
         setNoCapReport(null);
         setNoCapError(null);
         setNoCapFinished(false);
         setNoCapLoading(true);
+        setNoCapLoadingMessage(
+            'Generating your read… results appear here as soon as they are ready.',
+        );
+
+        message15sId = window.setTimeout(() => {
+            if (!cancelled) {
+                setNoCapLoadingMessage(
+                    'Hang tight — analyzing your profile...',
+                );
+            }
+        }, 15000);
+
+        message30sId = window.setTimeout(() => {
+            if (!cancelled) {
+                setNoCapLoadingMessage(
+                    'Almost there — this usually takes under a minute...',
+                );
+            }
+        }, 30000);
+
+        timeoutId = window.setTimeout(() => {
+            if (!cancelled) {
+                setNoCapError(
+                    'This is taking longer than usual. Your analysis is still running — refresh in a moment or retry now.',
+                );
+                setNoCapFinished(true);
+                setNoCapLoading(false);
+            }
+        }, 60000);
 
         void (async () => {
             try {
@@ -500,6 +564,15 @@ export default function OnboardingPage({
                 }
 
                 if (!cancelled) {
+                    if (timeoutId !== undefined) {
+                        window.clearTimeout(timeoutId);
+                    }
+                    if (message15sId !== undefined) {
+                        window.clearTimeout(message15sId);
+                    }
+                    if (message30sId !== undefined) {
+                        window.clearTimeout(message30sId);
+                    }
                     setNoCapReport(fromApi);
                     setNoCapFinished(true);
                     setNoCapLoading(false);
@@ -513,6 +586,15 @@ export default function OnboardingPage({
                 }
             } catch {
                 if (!cancelled) {
+                    if (timeoutId !== undefined) {
+                        window.clearTimeout(timeoutId);
+                    }
+                    if (message15sId !== undefined) {
+                        window.clearTimeout(message15sId);
+                    }
+                    if (message30sId !== undefined) {
+                        window.clearTimeout(message30sId);
+                    }
                     setNoCapError('Server error. Please try again.');
                     setNoCapFinished(true);
                     setNoCapLoading(false);
@@ -522,6 +604,15 @@ export default function OnboardingPage({
 
         return () => {
             cancelled = true;
+            if (timeoutId !== undefined) {
+                window.clearTimeout(timeoutId);
+            }
+            if (message15sId !== undefined) {
+                window.clearTimeout(message15sId);
+            }
+            if (message30sId !== undefined) {
+                window.clearTimeout(message30sId);
+            }
         };
     }, [
         step,
@@ -585,7 +676,27 @@ export default function OnboardingPage({
 
     const handleBack = () => {
         if (step > 1) {
-            setStep(step - 1);
+            const targetStep = step - 1;
+            setStep(targetStep);
+            
+            const stepKeyMap: Record<number, number> = {
+                1: 1,
+                2: 2,
+                3: 3,
+                4: 4,
+                5: 5,
+            };
+            const serverStepKey = stepKeyMap[targetStep];
+            if (serverStepKey !== undefined) {
+                router.post(
+                    OnboardingController.saveStep.url(),
+                    { step: serverStepKey - 1 },
+                    {
+                        preserveScroll: true,
+                        only: [],
+                    },
+                );
+            }
         }
     };
 
@@ -904,9 +1015,7 @@ export default function OnboardingPage({
                                             {noCapLoading && !noCapReport ? (
                                                 <div className="space-y-3">
                                                     <p className="text-center text-xs text-muted-foreground sm:text-sm">
-                                                        Generating your read…
-                                                        results appear here as
-                                                        soon as they are ready.
+                                                        {noCapLoadingMessage}
                                                     </p>
                                                     <div className="flex items-start gap-3 sm:gap-4">
                                                         <Skeleton className="size-[7.5rem] shrink-0 rounded-full sm:size-36" />
@@ -940,6 +1049,9 @@ export default function OnboardingPage({
                                                             setNoCapError(null);
                                                             setNoCapReport(
                                                                 null,
+                                                            );
+                                                            setNoCapLoadingMessage(
+                                                                'Generating your read… results appear here as soon as they are ready.',
                                                             );
                                                             setNoCapStreamKey(
                                                                 (k) => k + 1,
@@ -1185,13 +1297,7 @@ export default function OnboardingPage({
                                             className="text-center text-sm"
                                             message={errors.billing}
                                         />
-                                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
-                                            Limited Time Offer: Try everything
-                                            for $1 (3 days)
-                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
-                                        </span>
-                                        <div className="space-y-6">
+                                        <div className="space-y-3">
                                             <div className="flex justify-start">
                                                 <div
                                                     className={cn(
@@ -1203,7 +1309,8 @@ export default function OnboardingPage({
                                                     <button
                                                         type="button"
                                                         disabled={
-                                                            billingComplete
+                                                            billingComplete ||
+                                                            checkoutBusy
                                                         }
                                                         onClick={() =>
                                                             setRecurringPlanCycle(
@@ -1222,7 +1329,8 @@ export default function OnboardingPage({
                                                     <button
                                                         type="button"
                                                         disabled={
-                                                            billingComplete
+                                                            billingComplete ||
+                                                            checkoutBusy
                                                         }
                                                         onClick={() =>
                                                             setRecurringPlanCycle(
@@ -1242,159 +1350,123 @@ export default function OnboardingPage({
                                             </div>
 
                                             <div className="grid gap-2 md:grid-cols-2">
-                                                {/* Trial Plan */}
+                                                {/* Trial Plan - Now Featured */}
                                                 <div
                                                     className={cn(
-                                                        'flex flex-col rounded-2xl border border-muted bg-muted/30 p-3 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
+                                                        'relative flex flex-col rounded-xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-600 to-emerald-700 p-2.5 text-white shadow-lg transition-all hover:shadow-xl',
                                                         trialSelected &&
-                                                            'ring-2 ring-primary/50 ring-offset-2 ring-offset-background',
+                                                            'ring-2 ring-emerald-400 ring-offset-2 ring-offset-background',
                                                         dimUnselectedPlans &&
                                                             !trialSelected &&
                                                             'pointer-events-none opacity-45 grayscale select-none',
                                                     )}
                                                 >
-                                                    <div className="mb-4 flex-1">
-                                                        {trialSelected &&
-                                                            dimUnselectedPlans && (
-                                                                <p className="mb-2 text-xs font-semibold tracking-wide text-primary uppercase">
-                                                                    Selected
-                                                                    plan
-                                                                </p>
-                                                            )}
-                                                        <p className="text-base font-semibold text-foreground">
-                                                            $1 Trial
-                                                        </p>
-                                                        <div className="mt-2 flex items-baseline gap-1">
-                                                            <p className="text-xl font-semibold text-foreground">
-                                                                $1
-                                                            </p>
-                                                        </div>
-                                                        <p className="mt-2 text-xs text-muted-foreground">
-                                                            Full access to
-                                                            everything for 3
-                                                            days.
-                                                        </p>
-                                                        {/* <ul className="mt-4 space-y-2 text-sm text-foreground/80">
-                                                <li className="flex gap-2">
-                                                    <span className="text-emerald-600">✓</span>
-                                                    <span>Basic profile analysis</span>
-                                                </li>
-                                                <li className="flex gap-2">
-                                                    <span className="text-emerald-600">✓</span>
-                                                    <span>Single evaluation</span>
-                                                </li>
-                                            </ul> */}
+                                                    <div className="absolute -top-2 right-4 rounded-full bg-emerald-400 px-2 py-0.5 text-[10px] font-bold text-emerald-950 uppercase">
+                                                        Best
                                                     </div>
-                                                    <Form
-                                                        action={OnboardingController.checkout.url()}
-                                                        method="post"
-                                                        className="contents"
+                                                    <div className="mb-2 flex-1">
+                                                        <p className="text-sm font-semibold">
+                                                            $1 Trial • 3 days full access
+                                                        </p>
+                                                        <p className="mt-1 text-lg font-bold">
+                                                            $1
+                                                        </p>
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        className="w-full bg-emerald-400 font-semibold text-emerald-950 transition-colors hover:bg-emerald-300 disabled:opacity-60"
+                                                        disabled={
+                                                            billingComplete ||
+                                                            checkoutBusy ||
+                                                            (dimUnselectedPlans &&
+                                                                !trialSelected)
+                                                        }
+                                                        onClick={() =>
+                                                            submitCheckoutPlan(
+                                                                'trial',
+                                                            )
+                                                        }
                                                     >
-                                                        <input
-                                                            type="hidden"
-                                                            name="plan"
-                                                            value="trial"
-                                                        />
-                                                        <input
-                                                            type="hidden"
-                                                            name="billing_cycle"
-                                                            value="monthly"
-                                                        />
-                                                        <Button
-                                                            type="submit"
-                                                            className="mt-6 w-full"
-                                                            variant="outline"
-                                                            disabled={
-                                                                billingComplete ||
-                                                                (dimUnselectedPlans &&
-                                                                    !trialSelected)
-                                                            }
-                                                        >
-                                                            {billingComplete &&
-                                                            trialSelected
-                                                                ? 'Selected plan'
-                                                                : 'Select Trial'}
-                                                        </Button>
-                                                    </Form>
+                                                        {checkoutPlanBusy ===
+                                                        'trial' ? (
+                                                            <>
+                                                                <CircleNotch
+                                                                    className="mr-2 inline size-4 animate-spin"
+                                                                    aria-hidden
+                                                                />
+                                                                Redirecting to
+                                                                checkout...
+                                                            </>
+                                                        ) : billingComplete &&
+                                                          trialSelected ? (
+                                                            'Selected plan'
+                                                        ) : (
+                                                            'Start $1 Trial'
+                                                        )}
+                                                    </Button>
                                                 </div>
 
-                                                {/* Featured Plan */}
+                                                {/* Sprint Plan - Now Secondary */}
                                                 <div
                                                     className={cn(
-                                                        'relative flex flex-col rounded-2xl border-2 border-foreground/20 bg-gradient-to-br from-foreground to-foreground/80 p-3 text-background shadow-xl transition-all hover:shadow-2xl',
+                                                        'relative flex flex-col rounded-xl border border-muted bg-muted/30 p-2.5 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
                                                         sprintSelected &&
-                                                            'ring-2 ring-orange-400 ring-offset-2 ring-offset-background',
+                                                            'ring-2 ring-primary/50 ring-offset-2 ring-offset-background',
                                                         dimUnselectedPlans &&
                                                             !sprintSelected &&
                                                             'pointer-events-none opacity-45 grayscale select-none',
                                                     )}
                                                 >
-                                                    <div className="absolute -top-3 right-6 flex items-center gap-1.5 rounded-full bg-orange-400 px-3 py-1 text-xs font-bold tracking-wide text-black uppercase">
-                                                        <span>
-                                                            Most popular
-                                                        </span>
+                                                    <div className="absolute -top-2 right-4 rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium text-muted-foreground uppercase">
+                                                        Popular
                                                     </div>
-                                                    <div className="mb-4 flex-1">
-                                                        {sprintSelected &&
-                                                            dimUnselectedPlans && (
-                                                                <p className="mb-2 text-xs font-bold tracking-wide text-orange-300 uppercase">
-                                                                    Selected
-                                                                    plan
-                                                                </p>
-                                                            )}
-                                                        <p className="text-base font-semibold">
-                                                            Admissions Sprint
+                                                    <div className="mb-2 flex-1">
+                                                        <p className="text-sm font-semibold text-foreground">
+                                                            Sprint • 90 days
                                                         </p>
-                                                        <div className="mt-2 flex items-baseline gap-1">
-                                                            <p className="text-xl font-semibold">
-                                                                $28
-                                                            </p>
-                                                            <span className="text-xs text-background/80">
-                                                                one-time
-                                                            </span>
-                                                        </div>
-                                                        <p className="mt-2 text-xs text-background/90">
-                                                            90 days of unlimited
-                                                            gap analyses, essay
-                                                            roasts, and AI chat.
-                                                        </p> 
+                                                        <p className="mt-1 text-lg font-bold text-foreground">
+                                                            $29
+                                                        </p>
                                                     </div>
-                                                    <Form
-                                                        action={OnboardingController.checkout.url()}
-                                                        method="post"
-                                                        className="contents"
+                                                    <Button
+                                                        type="button"
+                                                        className="mt-6 w-full"
+                                                        variant="outline"
+                                                        disabled={
+                                                            billingComplete ||
+                                                            checkoutBusy ||
+                                                            (dimUnselectedPlans &&
+                                                                !sprintSelected)
+                                                        }
+                                                        onClick={() =>
+                                                            submitCheckoutPlan(
+                                                                'sprint',
+                                                            )
+                                                        }
                                                     >
-                                                        <input
-                                                            type="hidden"
-                                                            name="plan"
-                                                            value="sprint"
-                                                        />
-                                                        <input
-                                                            type="hidden"
-                                                            name="billing_cycle"
-                                                            value="monthly"
-                                                        />
-                                                        <Button
-                                                            type="submit"
-                                                            className="mt-6 w-full bg-orange-400 font-semibold text-black transition-colors hover:bg-orange-500 disabled:opacity-60"
-                                                            disabled={
-                                                                billingComplete ||
-                                                                (dimUnselectedPlans &&
-                                                                    !sprintSelected)
-                                                            }
-                                                        >
-                                                            {billingComplete &&
-                                                            sprintSelected
-                                                                ? 'Selected plan'
-                                                                : 'Select Admissions Sprint'}
-                                                        </Button>
-                                                    </Form>
+                                                        {checkoutPlanBusy ===
+                                                        'sprint' ? (
+                                                            <>
+                                                                <CircleNotch
+                                                                    className="mr-2 inline size-4 animate-spin"
+                                                                    aria-hidden
+                                                                />
+                                                                Redirecting to
+                                                                checkout...
+                                                            </>
+                                                        ) : billingComplete &&
+                                                          sprintSelected ? (
+                                                            'Selected'
+                                                        ) : (
+                                                            'Select Sprint'
+                                                        )}
+                                                    </Button>
                                                 </div>
 
                                                 {/* Pro Plan */}
                                                 <div
                                                     className={cn(
-                                                        'flex flex-col rounded-2xl border border-muted bg-muted/30 p-3 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
+                                                        'flex flex-col rounded-xl border border-muted bg-muted/30 p-2.5 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
                                                         proSelected &&
                                                             'ring-2 ring-primary/50 ring-offset-2 ring-offset-background',
                                                         dimUnselectedPlans &&
@@ -1402,79 +1474,83 @@ export default function OnboardingPage({
                                                             'pointer-events-none opacity-45 grayscale select-none',
                                                     )}
                                                 >
-                                                    <div className="mb-4 flex-1">
-                                                        {proSelected &&
-                                                            dimUnselectedPlans && (
-                                                                <p className="mb-2 text-xs font-semibold tracking-wide text-primary uppercase">
-                                                                    Selected
-                                                                    plan
-                                                                </p>
-                                                            )}
-                                                        <p className="text-base font-semibold text-foreground">
-                                                            Pro
+                                                    <div className="mb-2 flex-1">
+                                                        <p className="text-sm font-semibold text-foreground">
+                                                            Pro • Unlimited
                                                         </p>
-                                                        <div className="mt-2 flex items-baseline gap-1">
-                                                            <p className="text-xl font-semibold text-foreground">
-                                                                $
+                                                        <p className="mt-1 text-lg font-bold text-foreground">
+                                                            $
+                                                            {recurringPlanCycle ===
+                                                            'monthly'
+                                                                ? '15'
+                                                                : '150'}
+                                                            <span className="text-xs font-normal text-muted-foreground">
                                                                 {recurringPlanCycle ===
                                                                 'monthly'
-                                                                    ? '15'
-                                                                    : '150'}
-                                                            </p>
-                                                            <span className="text-xs text-muted-foreground">
-                                                                {recurringPlanCycle ===
-                                                                'monthly'
-                                                                    ? '/month'
-                                                                    : '/year'}
+                                                                    ? '/mo'
+                                                                    : '/yr'}
                                                             </span>
-                                                        </div>
-                                                        <p className="mt-2 text-xs text-muted-foreground">
-                                                            Unlimited gap
-                                                            analyses, essay
-                                                            roasts, and AI chat
-                                                            for ongoing
-                                                            guidance.
-                                                        </p> 
+                                                        </p>
                                                     </div>
-                                                    <Form
-                                                        action={OnboardingController.checkout.url()}
-                                                        method="post"
-                                                        className="contents"
+                                                    <Button
+                                                        type="button"
+                                                        className="w-full"
+                                                        variant="outline"
+                                                        disabled={
+                                                            billingComplete ||
+                                                            checkoutBusy ||
+                                                            (dimUnselectedPlans &&
+                                                                !proSelected)
+                                                        }
+                                                        onClick={() =>
+                                                            submitCheckoutPlan(
+                                                                'pro',
+                                                            )
+                                                        }
                                                     >
-                                                        <input
-                                                            type="hidden"
-                                                            name="plan"
-                                                            value="pro"
-                                                        />
-                                                        <input
-                                                            type="hidden"
-                                                            name="billing_cycle"
-                                                            value={
-                                                                recurringPlanCycle
-                                                            }
-                                                        />
-                                                        <Button
-                                                            type="submit"
-                                                            className="mt-6 w-full"
-                                                            variant="outline"
-                                                            disabled={
-                                                                billingComplete ||
-                                                                (dimUnselectedPlans &&
-                                                                    !proSelected)
-                                                            }
-                                                        >
-                                                            {billingComplete &&
-                                                            proSelected
-                                                                ? 'Selected plan'
-                                                                : 'Select Pro'}
-                                                        </Button>
-                                                    </Form>
+                                                        {checkoutPlanBusy ===
+                                                        'pro' ? (
+                                                            <>
+                                                                <CircleNotch
+                                                                    className="mr-2 inline size-4 animate-spin"
+                                                                    aria-hidden
+                                                                />
+                                                                Redirecting to
+                                                                checkout...
+                                                            </>
+                                                        ) : billingComplete &&
+                                                          proSelected ? (
+                                                            'Selected'
+                                                        ) : (
+                                                            'Select Pro'
+                                                        )}
+                                                    </Button>
                                                 </div>
                                             </div>
                                             <InputError
                                                 className="text-center text-sm"
-                                                message={errors.plan}
+                                                message={
+                                                    errors.plan ??
+                                                    checkoutForm.errors.plan
+                                                }
                                             />
+                                            {!billingComplete ? (
+                                                <Form
+                                                    action="/onboarding/skip-billing"
+                                                    method="post"
+                                                    options={{ preserveScroll: true }}
+                                                    className="text-center"
+                                                >
+                                                    <Button
+                                                        type="submit"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-xs text-muted-foreground"
+                                                    >
+                                                        Skip for now
+                                                    </Button>
+                                                </Form>
+                                            ) : null}
                                         </div>
                                     </>
                                 )}
@@ -1506,13 +1582,13 @@ export default function OnboardingPage({
 
                     {/* Navigation — not fixed: sticks to viewport bottom when content is short; follows content when long (scroll) */}
                     <div className="mt-auto px-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
-                        {step === 4 ? (
-                            <p className="mb-2 text-center text-sm text-muted-foreground sm:hidden">
-                                {billingComplete
-                                    ? 'Tap Continue for the next step.'
-                                    : 'Pick a plan above and complete checkout in Stripe.'}
-                            </p>
-                        ) : null}
+                                        {step === 4 ? (
+                                            <p className="mb-2 text-center text-sm text-muted-foreground sm:hidden">
+                                                {billingComplete
+                                                    ? 'Tap Continue for the next step.'
+                                                    : 'Pick a plan, skip for now, or complete checkout in Stripe.'}
+                                            </p>
+                                        ) : null}
                         <div className="flex items-center justify-between gap-2 sm:gap-4">
                             <Button
                                 variant="outline"
@@ -1529,7 +1605,7 @@ export default function OnboardingPage({
                                 <p className="hidden flex-1 text-center text-sm text-muted-foreground sm:block sm:text-right">
                                     {billingComplete
                                         ? 'Continue when you are ready.'
-                                        : 'Use a plan card above to open Stripe Checkout.'}
+                                        : 'Use a plan card above, or skip billing for now.'}
                                 </p>
                             ) : null}
                             {step < STEPS.length ? (
@@ -1539,7 +1615,6 @@ export default function OnboardingPage({
                                     disabled={
                                         (step === 3 &&
                                             (noCapLoading || !noCapFinished)) ||
-                                        (step === 4 && !billingComplete) ||
                                         stepProcessing ||
                                         needsAgeGate
                                     }
@@ -1562,11 +1637,7 @@ export default function OnboardingPage({
                                             type="submit"
                                             size="lg"
                                             className="w-full sm:w-auto"
-                                            disabled={
-                                                processing ||
-                                                !billingComplete ||
-                                                needsAgeGate
-                                            }
+                                            disabled={processing || needsAgeGate}
                                         >
                                             Start Your Journey
                                             <RocketLaunch className="ml-2 h-4 w-4" />
@@ -1588,15 +1659,6 @@ export default function OnboardingPage({
                         </p>
                     )}
 
-                    {/* Secondary Action */}
-                    {step === STEPS.length && (
-                        <p className="mt-4 text-center text-xs text-muted-foreground">
-                            Or{' '}
-                            <button className="font-medium text-foreground hover:underline">
-                                edit your profile later
-                            </button>
-                        </p>
-                    )}
                 </div>
             </div>
         </>
