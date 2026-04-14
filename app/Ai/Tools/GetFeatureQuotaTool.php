@@ -53,10 +53,18 @@ TXT;
     }
 
     /**
+     * OpenAI requires at least one property with `additionalProperties: false`.
+     * An empty schema causes a 400 invalid_function_parameters error.
+     *
      * @return array<string, Type>
      */
     public function schema(JsonSchema $schema): array
     {
-        return [];
+        return [
+            'include_chat_detail' => $schema->boolean()
+                ->description('Include chat-specific quota fields. Defaults to true; always returns the full summary regardless.')
+                ->default(true)
+                ->required(),
+        ];
     }
 }
