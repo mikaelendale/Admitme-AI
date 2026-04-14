@@ -3,6 +3,7 @@ import type { Icon } from '@phosphor-icons/react';
 import type { Appearance } from '@/hooks/use-appearance';
 import { useAppearance } from '@/hooks/use-appearance';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 const modes: { value: Appearance; icon: Icon; label: string }[] = [
     { value: 'light', icon: SunIcon, label: 'Light' },
     { value: 'dark', icon: MoonIcon, label: 'Dark' },
@@ -26,7 +27,7 @@ export default function ModeToggle({ className }: { className?: string }) {
             type="button"
             variant="ghost"
             size="icon"
-            className=" shrink-0 rounded-full"
+            className={cn('shrink-0 rounded-full', className)}
             onClick={() => updateAppearance(nextMode[appearance])}
             aria-label={`Theme: ${current.label}. Activate to switch to ${upcoming.label}.`}
         >
