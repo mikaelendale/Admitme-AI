@@ -16,10 +16,15 @@ use Stringable;
 
 #[Provider(Lab::OpenAI)]
 #[Model('gpt-5-nano')]
-#[Timeout(120)]
+#[Timeout(180)]
 class ContextualAuditorAgent implements Agent, HasStructuredOutput
 {
     use Promptable;
+
+    public function timeout(): int
+    {
+        return (int) config('college_list_council.auditor_llm_timeout', 180);
+    }
 
     public function instructions(): Stringable|string
     {

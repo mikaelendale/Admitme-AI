@@ -44,7 +44,7 @@ php artisan queue:work --tries=3 --timeout=600 --sleep=3
 ```
 
 - `--tries=3` — attempt each job up to 3 times before moving to `failed_jobs`
-- `--timeout=600` — kill a job process after 10 minutes (covers the college list council pipeline)
+- `--timeout=600` — must be **≥** `COLLEGE_LIST_COUNCIL_JOB_TIMEOUT` (default 600). If the worker timeout is lower than a long council run, Laravel will kill the job and you will see `RunCollegeListCouncilJob` / “attempted too many times” in logs even when OpenAI is still working.
 - `--sleep=3` — poll the `jobs` table every 3 seconds when idle
 
 For local dev you can also use the sync driver to skip queuing entirely:

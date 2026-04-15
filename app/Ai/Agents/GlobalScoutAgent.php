@@ -22,10 +22,18 @@ use Stringable;
 #[Provider(Lab::OpenAI)]
 #[Model('gpt-5-nano')]
 #[MaxSteps(14)]
-#[Timeout(300)]
+#[Timeout(420)]
 class GlobalScoutAgent implements Agent, HasStructuredOutput, HasTools
 {
     use Promptable;
+
+    /**
+     * Single OpenAI request timeout (web search + structured output can exceed 60s).
+     */
+    public function timeout(): int
+    {
+        return (int) config('college_list_council.scout_llm_timeout', 420);
+    }
 
     public function instructions(): Stringable|string
     {

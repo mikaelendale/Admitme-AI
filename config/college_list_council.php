@@ -75,6 +75,17 @@ return [
 
     'job_tries' => (int) env('COLLEGE_LIST_COUNCIL_JOB_TRIES', 1),
 
+    /**
+     * Per-call OpenAI HTTP timeouts (seconds) for council agents.
+     * Laravel AI defaults to 60s when not overridden — too low for tool-heavy scout/judge calls.
+     * Keep each value below your queue worker max timeout and below {@see job_timeout}.
+     */
+    'auditor_llm_timeout' => max(60, (int) env('COLLEGE_LIST_AUDITOR_LLM_TIMEOUT', 180)),
+
+    'scout_llm_timeout' => max(120, (int) env('COLLEGE_LIST_SCOUT_LLM_TIMEOUT', 420)),
+
+    'judge_llm_timeout' => max(120, (int) env('COLLEGE_LIST_JUDGE_LLM_TIMEOUT', 300)),
+
     /** Log preflight / scout / judge / assembly milestones (counts + durations). */
     'milestone_logging' => filter_var(
         env('COLLEGE_LIST_COUNCIL_LOG_MILESTONES', true),

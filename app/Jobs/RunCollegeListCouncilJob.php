@@ -68,18 +68,20 @@ class RunCollegeListCouncilJob implements ShouldQueue
             return;
         }
 
-        $run->forceFill(['started_at' => $run->started_at ?? now()])->save();
-
-        $tracking = $this->startTracking((int) $user->id);
+        $tracking = null;
         $startedNs = hrtime(true);
 
-        CollegeListCouncilRunLog::info('Council job started', [
-            'run_id' => $this->runId,
-            'user_id' => $user->id,
-            'intent' => $run->intent,
-        ]);
-
         try {
+            $run->forceFill(['started_at' => $run->started_at ?? now()])->save();
+
+            $tracking = $this->startTracking((int) $user->id);
+
+            CollegeListCouncilRunLog::info('Council job started', [
+                'run_id' => $this->runId,
+                'user_id' => $user->id,
+                'intent' => $run->intent,
+            ]);
+
             $orchestrator->execute($run->fresh(), $user);
 
             $finished = $run->fresh();
@@ -111,6 +113,9 @@ class RunCollegeListCouncilJob implements ShouldQueue
             if ($fresh !== null && ! $fresh->isTerminal()) {
                 $recorder->fail($fresh, 'Something went wrong while building your college list. Please try again.');
             }
+
+            // Do not rethrow: mark the run failed above so the UI can recover; avoid queue-level
+            // "permanently failed" / retry storms for LLM timeouts and DB hiccups.
         }
     }
 
