@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\StartBillingCheckoutRequest;
 use App\Http\Requests\Settings\StartBillingSubscriptionCheckoutRequest;
 use App\Http\Requests\Settings\SwapSubscriptionRequest;
+use App\Models\OnboardingResponse;
 use App\Models\User;
 use App\Support\BillingDisplay;
 use App\Support\BillingPlanCatalog;
@@ -30,6 +31,8 @@ class BillingController extends Controller
     {
         $user = $request->user();
         $this->maybeVerifyBillingCheckoutReturn($request, $user);
+
+        $trialOnly = (bool) config('billing.trial_only_mode', false);
 
         $hasStripeCustomer = $user->hasStripeId();
 
@@ -92,10 +95,10 @@ class BillingController extends Controller
                 };
             } elseif ($passEnds !== null) {
                 $planLine = 'Access expired — subscribe to Pro or buy a 90-day pass below';
+            } elseif ($trialOnly) {
+                $planLine = 'No paid plan — new checkouts paused';
             }
         }
-
-        $trialOnly = (bool) config('billing.trial_only_mode', false);
 
         $plans = BillingPlanCatalog::plansForSettings($currentPriceId, $recurringInterval);
         if ($trialOnly && ! $subscribed) {
@@ -106,6 +109,11 @@ class BillingController extends Controller
             && $user->platform_pass_plan === 'sprint'
             && $user->platform_pass_ends_at !== null
             && Carbon::parse($user->platform_pass_ends_at)->isFuture();
+
+        $billingSkippedOnboarding = OnboardingResponse::query()
+            ->where('user_id', $user->id)
+            ->where('question_key', 'billing.skipped')
+            ->exists();
 
         return Inertia::render('settings/billing', [
             'hasStripeCustomer' => $hasStripeCustomer,
@@ -122,6 +130,7 @@ class BillingController extends Controller
             'sprint_checkout_configured' => ! $trialOnly && $this->priceConfigured('sprint'),
             'trial_only_mode' => $trialOnly,
             'has_active_sprint_pass' => $hasActiveSprintPass,
+            'billing_skipped_onboarding' => $billingSkippedOnboarding,
         ]);
     }
 

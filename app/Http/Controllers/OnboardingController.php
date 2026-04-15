@@ -337,6 +337,20 @@ class OnboardingController extends Controller
             $profile->update(['status' => 'completed']);
         }
 
+        OnboardingResponse::updateOrCreate(
+            [
+                'user_id' => $user->id,
+                'onboarding_session_id' => $session->id,
+                'question_key' => 'billing.skipped',
+            ],
+            [
+                'step_key' => 'plans',
+                'source' => 'form',
+                'answer_text' => '1',
+                'answer_json' => ['skipped' => true],
+            ],
+        );
+
         $session->update([
             'status' => 'completed',
             'completed_at' => now(),

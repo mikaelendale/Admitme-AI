@@ -44,6 +44,8 @@ type Props = {
     sprint_checkout_configured: boolean;
     trial_only_mode: boolean;
     has_active_sprint_pass: boolean;
+    /** True when the user completed onboarding via "Skip for now" (no checkout). */
+    billing_skipped_onboarding: boolean;
 };
 
 function swapButtonLabel(
@@ -97,6 +99,7 @@ export default function Billing({
     sprint_checkout_configured,
     trial_only_mode,
     has_active_sprint_pass,
+    billing_skipped_onboarding,
 }: Props) {
     const { errors } = usePage<{ errors: { billing?: string } }>().props;
     const { flash } = usePage<{ flash?: { status?: string } }>().props;
@@ -138,7 +141,11 @@ export default function Billing({
                 <Heading
                     variant="small"
                     title="Plan & billing"
-                    description="Subscribe to Pro, buy a 90-day pass, or manage billing in Stripe. The $1 trial is only available during onboarding."
+                    description={
+                        trial_only_mode
+                            ? 'Your current access is below. The $1 trial is only available during onboarding; Sprint, Pro, and other checkouts are paused while we limit costs.'
+                            : 'Subscribe to Pro, buy a 90-day pass, or manage billing in Stripe. The $1 trial is only available during onboarding.'
+                    }
                 />
                 <p className="-mt-4 text-sm text-muted-foreground">
                     <Link
@@ -167,9 +174,21 @@ export default function Billing({
                     <Alert variant="destructive">
                         <AlertTitle>Your access has expired</AlertTitle>
                         <AlertDescription>
-                            Subscribe to Pro or purchase a 90-day pass to use
-                            the dashboard and workspace again. The $1 trial is
-                            only available during onboarding.
+                            {trial_only_mode ? (
+                                <>
+                                    New purchases are paused right now. Contact
+                                    support if you need workspace access, or use
+                                    the $1 trial during onboarding on a new
+                                    account if that fits your situation.
+                                </>
+                            ) : (
+                                <>
+                                    Subscribe to Pro or purchase a 90-day pass
+                                    to use the dashboard and workspace again.
+                                    The $1 trial is only available during
+                                    onboarding.
+                                </>
+                            )}
                         </AlertDescription>
                     </Alert>
                 ) : null}
@@ -243,9 +262,9 @@ export default function Billing({
                         </div>
                     ) : (
                         <p className="text-sm text-muted-foreground">
-                            Subscribe to Pro or buy a 90-day pass below to create
-                            your Stripe billing account. Contact support if you
-                            believe this is an error.
+                            {trial_only_mode
+                                ? 'No Stripe billing profile yet. Paid checkouts are paused — contact support if you need an exception.'
+                                : 'Subscribe to Pro or buy a 90-day pass below to create your Stripe billing account. Contact support if you believe this is an error.'}
                         </p>
                     )}
 
@@ -253,19 +272,52 @@ export default function Billing({
                 </div>
 
                 {!subscribed && !has_active_sprint_pass && trial_only_mode ? (
-                    <section className="space-y-2">
+                    <section className="space-y-3">
                         <h2 className="text-sm font-semibold text-foreground">
-                            One-time access
+                            Your plan
                         </h2>
-                        <p className="text-sm text-muted-foreground">
-                            Paid passes and Pro signup are paused while we limit
-                            costs. Use the{' '}
-                            <span className="font-medium text-foreground">
-                                $1 trial
-                            </span>{' '}
-                            during onboarding to unlock the workspace — or
-                            contact us if you need an exception.
-                        </p>
+                        <Card size="sm" className="max-w-lg">
+                            <CardHeader className="border-b border-border/60 pb-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <CardTitle className="text-sm">
+                                        Current access
+                                    </CardTitle>
+                                    <Badge variant="secondary">No paid plan</Badge>
+                                </div>
+                                <CardDescription className="text-sm font-semibold text-foreground">
+                                    {billing_skipped_onboarding
+                                        ? 'You finished onboarding without checkout.'
+                                        : 'No active trial, pass, or subscription on file.'}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="pt-4">
+                                <p className="text-sm leading-relaxed text-muted-foreground">
+                                    {billing_skipped_onboarding ? (
+                                        <>
+                                            Sprint, Pro, and other upgrades are
+                                            hidden while checkouts are paused.
+                                            The{' '}
+                                            <span className="font-medium text-foreground">
+                                                $1 trial
+                                            </span>{' '}
+                                            is only offered on the onboarding
+                                            billing step — contact us if you need
+                                            access.
+                                        </>
+                                    ) : (
+                                        <>
+                                            Paid passes and Pro signup are
+                                            paused while we limit costs. The{' '}
+                                            <span className="font-medium text-foreground">
+                                                $1 trial
+                                            </span>{' '}
+                                            is only available during onboarding
+                                            — contact us if you need an exception.
+                                        </>
+                                    )}
+                                </p>
+                            </CardContent>
+                        </Card>
                     </section>
                 ) : null}
 

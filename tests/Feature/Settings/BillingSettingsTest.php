@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Settings;
 
+use App\Models\OnboardingResponse;
+use App\Models\OnboardingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class BillingSettingsTest extends TestCase
@@ -138,7 +141,46 @@ class BillingSettingsTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->where('trial_only_mode', true)
                 ->where('plans', [])
-                ->where('sprint_checkout_configured', false));
+                ->where('sprint_checkout_configured', false)
+                ->where('planLine', 'No paid plan — new checkouts paused')
+                ->where('billing_skipped_onboarding', false));
+    }
+
+    public function test_trial_only_mode_shows_billing_skipped_when_onboarding_skip_recorded(): void
+    {
+        config()->set('billing.trial_only_mode', true);
+
+        $user = User::factory()->create([
+            'onboarded' => true,
+            'email_verified_at' => now(),
+        ]);
+
+        $session = OnboardingSession::query()->create([
+            'user_id' => $user->id,
+            'session_uuid' => (string) Str::uuid(),
+            'status' => 'completed',
+            'started_step_key' => '1',
+            'last_step_key' => '5',
+            'started_at' => now(),
+            'completed_at' => now(),
+        ]);
+
+        OnboardingResponse::query()->create([
+            'user_id' => $user->id,
+            'onboarding_session_id' => $session->id,
+            'step_key' => 'plans',
+            'question_key' => 'billing.skipped',
+            'source' => 'form',
+            'answer_text' => '1',
+            'answer_json' => ['skipped' => true],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('billing.edit'))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('billing_skipped_onboarding', true)
+                ->where('planLine', 'No paid plan — new checkouts paused'));
     }
 
     public function test_trial_only_mode_blocks_new_subscription_checkout(): void
