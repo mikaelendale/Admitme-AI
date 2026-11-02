@@ -56,11 +56,7 @@ class BillingController extends Controller
 
             $planLine = BillingDisplay::shortPlanLine($currentPriceId, $isAnnual);
 
-            if ($stripeSub->current_period_end) {
-                $nextBilling = Carbon::createFromTimestamp(
-                    $stripeSub->current_period_end,
-                )->toFormattedDateString();
-            }
+            $nextBilling = self::stripeCurrentPeriodEnd($stripeSub)?->toFormattedDateString();
 
             try {
                 $pm = $user->defaultPaymentMethod();
@@ -263,6 +259,27 @@ class BillingController extends Controller
         return is_string($first?->stripe_price) && $first->stripe_price !== ''
             ? $first->stripe_price
             : null;
+    }
+
+    /**
+     * When the current billing period ends. Since Stripe API `basil` the period is on each subscription item
+     * (`items.data[].current_period_end`), not on the subscription. With several items the latest end wins, the
+     * same rule as Cashier's `Subscription::currentPeriodEnd()`, read from the items already loaded here
+     * instead of one more API call per item.
+     */
+    private static function stripeCurrentPeriodEnd(\Stripe\Subscription $stripeSub): ?Carbon
+    {
+        $latest = null;
+
+        foreach ($stripeSub->items->data ?? [] as $item) {
+            $end = $item->current_period_end ?? null;
+
+            if (is_int($end) && ($latest === null || $end > $latest)) {
+                $latest = $end;
+            }
+        }
+
+        return $latest === null ? null : Carbon::createFromTimestamp($latest);
     }
 
     private static function stripeFirstItemInterval(\Stripe\Subscription $stripeSub): ?string

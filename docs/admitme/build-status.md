@@ -112,7 +112,7 @@ Credentials present in `.env` (names only): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY
 
 ### Known issues carried forward (not introduced by this work)
 
-- Stripe API `basil` moved `current_period_end` to subscription items and `invoice.subscription` to `invoice.parent.subscription_details`; `BillingController` and `NotifyUserOfInvoicePaymentFailure` still read the old fields.
+- ~~Stripe API `basil` moved `current_period_end` to subscription items and `invoice.subscription` to `invoice.parent.subscription_details`; `BillingController` and `NotifyUserOfInvoicePaymentFailure` still read the old fields.~~ **Fixed 2026-11-02.** The billing page reads the renewal date from the subscription items (the latest end when there are several), so it shows again and stripe-php no longer logs an "Undefined property" notice. The payment-failed listener reads `parent.subscription_details.subscription`, and still accepts the top-level `subscription` from webhook endpoints on an older API version. `BillingNextBillingDateTest` fakes only Stripe's HTTP layer with basil-shaped JSON; it and the new `InvoicePaymentFailedWebhookTest` cases fail on the old code. Not yet run against Stripe's test mode.
 - Frontend lint/format debt listed above.
 - Payments are out of scope for the plan's first journey but remain in the app; they are left untouched.
 

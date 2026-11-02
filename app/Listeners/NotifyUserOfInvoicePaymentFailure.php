@@ -19,7 +19,9 @@ class NotifyUserOfInvoicePaymentFailure
             return;
         }
 
-        $subscription = $invoice['subscription'] ?? null;
+        // Since Stripe API `basil` an invoice names its subscription under `parent.subscription_details`. A
+        // webhook endpoint created on an older API version still sends the top-level `subscription`.
+        $subscription = $invoice['parent']['subscription_details']['subscription'] ?? $invoice['subscription'] ?? null;
         if ($subscription === null || $subscription === '') {
             return;
         }

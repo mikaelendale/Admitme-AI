@@ -38,6 +38,53 @@ class InvoicePaymentFailedWebhookTest extends TestCase
         $this->assertNotNull($user->payment_failed_notified_at);
     }
 
+    public function test_basil_invoice_names_its_subscription_under_parent(): void
+    {
+        Notification::fake();
+
+        $user = User::factory()->create(['stripe_id' => 'cus_basil']);
+
+        // Stripe API `basil` and later: no top-level `subscription` on the invoice.
+        Event::dispatch(new WebhookReceived([
+            'type' => 'invoice.payment_failed',
+            'data' => [
+                'object' => [
+                    'object' => 'invoice',
+                    'customer' => 'cus_basil',
+                    'parent' => [
+                        'type' => 'subscription_details',
+                        'quote_details' => null,
+                        'subscription_details' => ['metadata' => [], 'subscription' => 'sub_basil'],
+                    ],
+                ],
+            ],
+        ]));
+
+        Notification::assertSentTo($user, SubscriptionPaymentFailedNotification::class);
+        $this->assertNotNull($user->fresh()->payment_failed_notified_at);
+    }
+
+    public function test_basil_invoice_without_a_subscription_parent_does_not_notify(): void
+    {
+        Notification::fake();
+
+        $user = User::factory()->create(['stripe_id' => 'cus_basil_one_off']);
+
+        Event::dispatch(new WebhookReceived([
+            'type' => 'invoice.payment_failed',
+            'data' => [
+                'object' => [
+                    'object' => 'invoice',
+                    'customer' => 'cus_basil_one_off',
+                    'parent' => null,
+                ],
+            ],
+        ]));
+
+        Notification::assertNothingSent();
+        $this->assertNull($user->fresh()->payment_failed_notified_at);
+    }
+
     public function test_invoice_payment_failed_throttled_within_24_hours(): void
     {
         Notification::fake();
