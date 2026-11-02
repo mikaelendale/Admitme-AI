@@ -31,7 +31,8 @@ class DashboardChatRoutesTest extends TestCase
         $convId = (string) Str::uuid();
         DB::table('agent_conversations')->insert([
             'id' => $convId,
-            'user_id' => $user->id,
+            'participant_type' => $user->getMorphClass(),
+            'participant_id' => $user->id,
             'title' => 'My thread',
             'created_at' => now(),
             'updated_at' => now(),
@@ -57,7 +58,8 @@ class DashboardChatRoutesTest extends TestCase
         $convId = (string) Str::uuid();
         DB::table('agent_conversations')->insert([
             'id' => $convId,
-            'user_id' => $user->id,
+            'participant_type' => $user->getMorphClass(),
+            'participant_id' => $user->id,
             'title' => 'T',
             'created_at' => now(),
             'updated_at' => now(),
@@ -67,13 +69,14 @@ class DashboardChatRoutesTest extends TestCase
         DB::table('agent_conversation_messages')->insert([
             'id' => $msgId,
             'conversation_id' => $convId,
-            'user_id' => $user->id,
+            'participant_type' => $user->getMorphClass(),
+            'participant_id' => $user->id,
             'agent' => AdmitMeGeneralAgent::class,
             'role' => 'user',
             'content' => 'Hi mentor',
             'attachments' => '[]',
-            'tool_calls' => '[]',
-            'tool_results' => '[]',
+            'steps' => '[]',
+            'status' => 'completed',
             'usage' => '{}',
             'meta' => '{}',
             'created_at' => now(),
@@ -105,7 +108,8 @@ class DashboardChatRoutesTest extends TestCase
         $convId = (string) Str::uuid();
         DB::table('agent_conversations')->insert([
             'id' => $convId,
-            'user_id' => $owner->id,
+            'participant_type' => $owner->getMorphClass(),
+            'participant_id' => $owner->id,
             'title' => 'Private',
             'created_at' => now(),
             'updated_at' => now(),

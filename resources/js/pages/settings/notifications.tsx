@@ -1,11 +1,20 @@
-import type { ReactNode } from 'react';
 import { Form, Head, Link, usePage } from '@inertiajs/react';
-import Heading from '@/components/heading';
+import { EnvelopeSimple } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
+import { Section } from '@/components/page/kit';
+import {
+    FormFooter,
+    Notice,
+    pillButton,
+    RowList,
+    SettingRow,
+    settingsBreadcrumbs,
+    SwitchInput,
+    UnsavedChanges,
+} from '@/components/settings/kit';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import type { FeatureQuotasProps } from '@/types/feature-quotas';
 import { edit as billingEdit } from '@/routes/billing';
+import type { FeatureQuotasProps } from '@/types/feature-quotas';
 
 type Prefs = {
     deadline_reminders: boolean;
@@ -14,6 +23,22 @@ type Prefs = {
     essay_feedback: boolean;
     marketing: boolean;
 };
+
+const FORM_ID = 'email-alerts-form';
+
+function UpgradeHint() {
+    return (
+        <span>
+            Included on Sprint &amp; Pro.{' '}
+            <Link
+                href={billingEdit.url()}
+                className="font-medium text-foreground underline decoration-foreground/25 underline-offset-4 hover:decoration-foreground"
+            >
+                Upgrade
+            </Link>
+        </span>
+    );
+}
 
 export default function Notifications({ preferences }: { preferences: Prefs }) {
     const { flash, feature_quotas } = usePage<{
@@ -29,87 +54,94 @@ export default function Notifications({ preferences }: { preferences: Prefs }) {
         <>
             <Head title="Email alerts" />
 
-            <div className="space-y-6">
-                <Heading
-                    variant="small"
-                    title="Email alerts"
-                    description="Choose what we email you about."
-                />
+            {flash?.status === 'notifications-updated' ? (
+                <Notice tone="success" className="mb-8">
+                    Preferences saved.
+                </Notice>
+            ) : null}
 
-                {flash?.status === 'notifications-updated' ? (
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                        Preferences saved.
-                    </p>
-                ) : null}
-
+            <Section
+                title="Email me about"
+                icon={EnvelopeSimple}
+                description="Choose what we email you about."
+            >
                 <Form
+                    id={FORM_ID}
                     action="/settings/notifications"
                     method="patch"
                     options={{ preserveScroll: true }}
-                    className="space-y-6"
+                    setDefaultsOnSuccess
                 >
-                    {({ processing }) => (
+                    {({ processing, isDirty, reset, recentlySuccessful }) => (
                         <>
-                            <ToggleRow
-                                name="deadline_reminders"
-                                defaultChecked={preferences.deadline_reminders}
-                                label="Deadline reminders"
-                                disabled={!deadlineOk}
-                                helper={
-                                    !deadlineOk ? (
-                                        <span>
-                                            Included on Sprint &amp; Pro.{' '}
-                                            <Link
-                                                href={billingEdit.url()}
-                                                className="font-medium text-primary underline underline-offset-2"
-                                            >
-                                                Upgrade
-                                            </Link>
-                                        </span>
-                                    ) : null
-                                }
+                            <UnsavedChanges
+                                dirty={isDirty}
+                                formId={FORM_ID}
+                                processing={processing}
+                                onDiscard={() => reset()}
                             />
-                            <ToggleRow
-                                name="weekly_progress"
-                                defaultChecked={preferences.weekly_progress}
-                                label="Weekly progress summary"
-                                disabled={!weeklyOk}
-                                helper={
-                                    !weeklyOk ? (
-                                        <span>
-                                            Included on Sprint &amp; Pro.{' '}
-                                            <Link
-                                                href={billingEdit.url()}
-                                                className="font-medium text-primary underline underline-offset-2"
-                                            >
-                                                Upgrade
-                                            </Link>
-                                        </span>
-                                    ) : null
-                                }
-                            />
-                            <ToggleRow
-                                name="profile_updates"
-                                defaultChecked={preferences.profile_updates}
-                                label="Profile updates"
-                            />
-                            <ToggleRow
-                                name="essay_feedback"
-                                defaultChecked={preferences.essay_feedback}
-                                label="Essay feedback available"
-                            />
-                            <ToggleRow
-                                name="marketing"
-                                defaultChecked={preferences.marketing}
-                                label="Marketing emails"
-                            />
-                            <Button type="submit" disabled={processing}>
-                                Save notifications
-                            </Button>
+
+                            <RowList>
+                                <ToggleRow
+                                    name="deadline_reminders"
+                                    defaultChecked={
+                                        preferences.deadline_reminders
+                                    }
+                                    label="Deadline reminders"
+                                    disabled={!deadlineOk}
+                                    helper={
+                                        !deadlineOk ? <UpgradeHint /> : null
+                                    }
+                                />
+                                <ToggleRow
+                                    name="weekly_progress"
+                                    defaultChecked={preferences.weekly_progress}
+                                    label="Weekly progress summary"
+                                    disabled={!weeklyOk}
+                                    helper={!weeklyOk ? <UpgradeHint /> : null}
+                                />
+                                <ToggleRow
+                                    name="profile_updates"
+                                    defaultChecked={preferences.profile_updates}
+                                    label="Profile updates"
+                                />
+                                <ToggleRow
+                                    name="essay_feedback"
+                                    defaultChecked={preferences.essay_feedback}
+                                    label="Essay feedback available"
+                                />
+                                <ToggleRow
+                                    name="marketing"
+                                    defaultChecked={preferences.marketing}
+                                    label="Marketing emails"
+                                />
+                            </RowList>
+
+                            <FormFooter saved={recentlySuccessful}>
+                                <Button
+                                    type="submit"
+                                    disabled={processing}
+                                    className={pillButton}
+                                >
+                                    Save changes
+                                </Button>
+                            </FormFooter>
                         </>
                     )}
                 </Form>
-            </div>
+            </Section>
+
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+                Emails about finished work (essays, college lists, gap analysis)
+                and your pass or payments are set on{' '}
+                <Link
+                    href="/notifications"
+                    className="font-medium text-foreground underline decoration-foreground/25 underline-offset-4 hover:decoration-foreground"
+                >
+                    Notifications
+                </Link>
+                .
+            </p>
         </>
     );
 }
@@ -128,32 +160,25 @@ function ToggleRow({
     helper?: ReactNode;
 }) {
     return (
-        <div
-            className={`rounded-lg border border-border/60 bg-background/50 px-3 py-3 ${disabled ? 'opacity-70' : ''}`}
+        <SettingRow
+            inline
+            htmlFor={name}
+            title={label}
+            description={helper ?? undefined}
+            className={disabled ? 'opacity-80' : undefined}
         >
-            <div className="flex items-center gap-3">
-                <input type="hidden" name={name} value="0" />
-                <Input
-                    id={name}
-                    name={name}
-                    type="checkbox"
-                    value="1"
-                    defaultChecked={defaultChecked}
-                    disabled={disabled}
-                    className="size-4 rounded border-input accent-primary disabled:cursor-not-allowed"
-                />
-                <Label
-                    htmlFor={name}
-                    className={`text-sm font-medium ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                    {label}
-                </Label>
-            </div>
-            {helper ? <p className="mt-2 pl-7 text-xs text-muted-foreground">{helper}</p> : null}
-        </div>
+            <input type="hidden" name={name} value="0" />
+            <SwitchInput
+                id={name}
+                name={name}
+                value="1"
+                defaultChecked={defaultChecked}
+                disabled={disabled}
+            />
+        </SettingRow>
     );
 }
 
 Notifications.layout = {
-    breadcrumbs: [{ title: 'Email alerts', href: '/settings/notifications' }],
+    breadcrumbs: settingsBreadcrumbs('Email alerts', '/settings/notifications'),
 };

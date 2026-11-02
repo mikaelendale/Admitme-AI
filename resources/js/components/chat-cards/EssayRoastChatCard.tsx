@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Fire } from '@phosphor-icons/react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface ScoreEntry {
@@ -16,19 +17,26 @@ interface EssayRoastChatCardProps {
 }
 
 const SCORE_DISPLAY: { key: string; label: string }[] = [
-    { key: 'authenticity', label: 'Auth' },
-    { key: 'specificity', label: 'Spec' },
+    { key: 'authenticity', label: 'Authenticity' },
+    { key: 'specificity', label: 'Specificity' },
     { key: 'emotional_impact', label: 'Impact' },
-    { key: 'structure', label: 'Struct' },
-    { key: 'differentiation', label: 'Diff' },
+    { key: 'structure', label: 'Structure' },
+    { key: 'differentiation', label: 'Differentiation' },
 ];
 
 function scoreColor(score: number): string {
-    if (score <= 4) return 'border-destructive/40 bg-destructive/10 text-destructive';
-    if (score <= 7) return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400';
-    return 'border-chart-2/40 bg-chart-2/10 text-chart-2';
+    if (score <= 4) {
+        return 'text-destructive';
+    }
+
+    if (score <= 7) {
+        return 'text-amber-600 dark:text-amber-400';
+    }
+
+    return 'text-emerald-600 dark:text-emerald-400';
 }
 
+/** A roast summary inside the mentor panel: average, five scores, the top fix and a link to the full roast. */
 export function EssayRoastChatCard({
     overallVerdict,
     scores,
@@ -37,67 +45,82 @@ export function EssayRoastChatCard({
     actionUrl,
 }: EssayRoastChatCardProps) {
     const scoreValues = SCORE_DISPLAY.map((s) => scores[s.key]?.score ?? 0);
-    const avg = scoreValues.length > 0 ? (scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length).toFixed(1) : '—';
+    const avg =
+        scoreValues.length > 0
+            ? (
+                  scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length
+              ).toFixed(1)
+            : '—';
 
-    const verdictPreview = overallVerdict.length > 120 ? overallVerdict.slice(0, 120) + '…' : overallVerdict;
+    const verdictPreview =
+        overallVerdict.length > 120
+            ? overallVerdict.slice(0, 120) + '…'
+            : overallVerdict;
 
     return (
-        <div className="mb-3 rounded-lg border border-border bg-card/60 p-3 text-xs shadow-sm">
-            <div className="flex items-start gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/50">
-                    <Fire className="size-5 text-destructive" weight="duotone" />
-                </div>
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-foreground">Essay Roast</span>
-                        <span className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {avg}/10
-                        </span>
-                    </div>
+        <div className="mb-2 flex items-start gap-3 rounded-xl bg-muted p-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background text-orange-500 shadow-card">
+                <Fire className="size-4" weight="duotone" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+                <p className="text-[13.5px] font-medium text-foreground">
+                    Essay roast{' '}
+                    <span className="nums font-normal text-muted-foreground">
+                        · {avg}/10 average
+                    </span>
+                </p>
+                <p className="mt-0.5 text-[12.5px] leading-snug text-pretty text-muted-foreground">
+                    {verdictPreview}
+                </p>
 
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                        {SCORE_DISPLAY.map((s) => {
-                            const entry = scores[s.key];
-                            const val = entry?.score ?? 0;
-                            return (
-                                <span
-                                    key={s.key}
+                <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-[12.5px]">
+                    {SCORE_DISPLAY.map((s) => {
+                        const val = scores[s.key]?.score ?? 0;
+
+                        return (
+                            <div
+                                key={s.key}
+                                className="flex min-w-0 items-baseline justify-between gap-2"
+                            >
+                                <dt className="truncate text-muted-foreground">
+                                    {s.label}
+                                </dt>
+                                <dd
                                     className={cn(
-                                        'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                                        'nums font-semibold',
                                         scoreColor(val),
                                     )}
                                 >
-                                    {s.label} {val}
-                                </span>
-                            );
-                        })}
-                    </div>
+                                    {val}
+                                </dd>
+                            </div>
+                        );
+                    })}
+                </dl>
+                <p className="mt-1 text-[11.5px] text-muted-foreground/80">
+                    Scores are AI estimates.
+                </p>
 
-                    <p className="mt-2 text-pretty text-muted-foreground">{verdictPreview}</p>
+                <p className="mt-2 text-[12.5px] leading-snug text-pretty">
+                    <span className="font-medium text-foreground">
+                        Top fix:{' '}
+                    </span>
+                    <span className="text-muted-foreground">
+                        {topPriorityFix}
+                    </span>
+                </p>
 
-                    <div className="mt-2 rounded-md border-l-2 border-amber-500/50 bg-amber-500/5 py-1.5 pl-2.5 pr-2 dark:bg-amber-500/10">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground">
-                            Top fix
-                        </span>
-                        <p className="mt-0.5 text-pretty text-muted-foreground">{topPriorityFix}</p>
-                    </div>
+                {clicheCount > 0 ? (
+                    <p className="mt-1.5 text-[12.5px] font-medium text-destructive">
+                        {clicheCount} cliché{clicheCount > 1 ? 's' : ''}{' '}
+                        detected
+                    </p>
+                ) : null}
 
-                    {clicheCount > 0 && (
-                        <div className="mt-2">
-                            <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
-                                {clicheCount} cliché{clicheCount > 1 ? 's' : ''} detected
-                            </span>
-                        </div>
-                    )}
-
-                    <div className="mt-2">
-                        <Link
-                            href={actionUrl}
-                            className="inline-flex h-8 w-full items-center justify-center rounded-md border border-primary/30 bg-primary/10 px-3 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-                        >
-                            Full Roast in Essay Suite →
-                        </Link>
-                    </div>
+                <div className="mt-2.5">
+                    <Button size="xs" variant="outline" asChild>
+                        <Link href={actionUrl}>Full roast in Essay suite</Link>
+                    </Button>
                 </div>
             </div>
         </div>

@@ -3,6 +3,7 @@
 import { router } from '@inertiajs/react';
 import { Check, CircleNotch } from '@phosphor-icons/react';
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -10,7 +11,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { edit as billingEdit } from '@/routes/billing';
 
 const PLANS = [
@@ -47,9 +47,12 @@ export function PaywallModal({
                 overlayClassName="fixed inset-0 isolate z-50 bg-black/55 duration-100 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
             >
                 <DialogHeader>
-                    <DialogTitle className="text-lg">Unlock AdmitMe</DialogTitle>
+                    <DialogTitle className="text-lg">
+                        Unlock AdmitMe
+                    </DialogTitle>
                     <DialogDescription>
-                        Start a $1 trial or pick a plan — all three unlock the full workspace.
+                        Start a $1 trial or pick a plan — all three unlock the
+                        full workspace.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -60,15 +63,26 @@ export function PaywallModal({
                             className="flex gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5"
                         >
                             <span className="mt-0.5 text-primary">
-                                <Check className="size-4" weight="bold" aria-hidden />
+                                <Check
+                                    className="size-4"
+                                    weight="bold"
+                                    aria-hidden
+                                />
                             </span>
                             <div className="min-w-0 flex-1">
                                 <p className="font-medium text-foreground">
-                                    <span className="text-primary">{plan.price}</span>
-                                    <span className="text-muted-foreground"> — </span>
+                                    <span className="text-primary">
+                                        {plan.price}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                        {' '}
+                                        —{' '}
+                                    </span>
                                     {plan.title}
                                 </p>
-                                <p className="text-sm text-muted-foreground">{plan.detail}</p>
+                                <p className="text-sm text-muted-foreground">
+                                    {plan.detail}
+                                </p>
                             </div>
                         </li>
                     ))}

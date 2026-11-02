@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadOnlyTool;
 use App\Models\CollegeListRun;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -13,7 +14,7 @@ use Stringable;
 /**
  * Loads stored council outputs for follow-up questions ("why not MIT?") from DB — not a fresh guess.
  */
-class GetCollegeListRunArtifactsTool implements Tool
+class GetCollegeListRunArtifactsTool implements ReadOnlyTool, Tool
 {
     public function __construct(
         protected User $user,

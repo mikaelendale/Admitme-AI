@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadOnlyTool;
 use App\Models\CollegeListSchool;
 use App\Models\OnboardingProfile;
 use App\Models\User;
@@ -16,7 +17,7 @@ use Stringable;
  * Returns a JSON snapshot of the authenticated student: account, preferences,
  * onboarding profile, and saved college list schools (college_list_schools).
  */
-class GetStudentAdmissionContextTool implements Tool
+class GetStudentAdmissionContextTool implements ReadOnlyTool, Tool
 {
     public function __construct(
         protected User $user,

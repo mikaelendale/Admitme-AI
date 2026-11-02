@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadOnlyTool;
 use App\Models\JobTracking;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -13,7 +14,7 @@ use Stringable;
 /**
  * Lets the mentor agent check background job status for the current user.
  */
-class GetActiveJobsTool implements Tool
+class GetActiveJobsTool implements ReadOnlyTool, Tool
 {
     public function __construct(
         protected User $user,

@@ -2,70 +2,79 @@
 
 namespace App\Http\Controllers;
 
-use App\Ai\Agents\AdmitMeGeneralAgent;
+use App\Ai\Context\ChatMode;
+use App\Ai\Streaming\MentorChatStreamProtocol;
+use App\Domain\Mentor\MentorTurnService;
+use App\Domain\Observability\RunInstrumentation;
 use App\Http\Requests\AdmitMeGeneralChatRequest;
-use App\Support\ConversationOwnership;
-use App\Support\FeatureQuotaManager;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Laravel\Ai\Responses\StreamableAgentResponse;
-use Laravel\Ai\Streaming\Events\StreamEnd;
-use Laravel\Ai\Streaming\Events\StreamStart;
-use Laravel\Ai\Streaming\Events\ToolCall;
-use Laravel\Ai\Streaming\Events\ToolResult;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Laravel\Ai\Responses\StreamedAgentResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class AdmitMeGeneralChatController extends Controller
 {
-    public function __invoke(AdmitMeGeneralChatRequest $request): StreamedResponse|JsonResponse
+    public function __invoke(AdmitMeGeneralChatRequest $request): Response|JsonResponse
     {
         $user = $request->user();
         $validated = $request->validated();
 
-        if (! empty($validated['conversation_id']) && ! ConversationOwnership::userOwnsConversation((int) $user->id, $validated['conversation_id'])) {
-            return response()->json(['message' => 'Invalid conversation.'], 403);
+        $turns = app(MentorTurnService::class);
+
+        if (($refused = $turns->refusal($user, ! empty($validated['conversation_id']) ? $validated['conversation_id'] : null)) !== null) {
+            return $refused;
         }
 
-        $quota = app(FeatureQuotaManager::class);
-        $bucket = $quota->resolvePlanBucket($user);
+        // One mentor turn at a time per conversation, so two replies never plan over each other (Phase 8).
+        $turnLock = null;
 
-        if ($bucket === 'trial') {
-            if (empty($validated['conversation_id'])) {
-                if (! $quota->canUse($user, 'chat_conversation')) {
-                    return response()->json([
-                        'message' => 'Conversation limit reached for your trial.',
-                        'quota' => $quota->featureStatus($user, 'chat_conversation'),
-                    ], 429);
-                }
-            } elseif (! $quota->canUse($user, 'chat_message_per_convo', $validated['conversation_id'])) {
+        if (! empty($validated['conversation_id'])) {
+            $turnLock = Cache::lock('mentor-turn:'.$validated['conversation_id'], 120);
+
+            if (! $turnLock->get()) {
                 return response()->json([
-                    'message' => 'Message limit reached for this chat.',
-                    'quota' => $quota->featureStatus($user, 'chat_message_per_convo', $validated['conversation_id']),
-                ], 429);
+                    'message' => 'The mentor is still answering in this conversation. Wait for that reply to finish, then send your message.',
+                    'error' => 'turn_in_progress',
+                ], 409);
             }
-        } elseif (! $quota->canUse($user, 'chat_message')) {
-            return response()->json([
-                'message' => 'Monthly mentor message limit reached.',
-                'quota' => $quota->featureStatus($user, 'chat_message'),
-            ], 429);
         }
 
         try {
-            $agent = AdmitMeGeneralAgent::make(user: $user);
+            [$agent, $message] = $turns->agentFor(
+                $user,
+                ChatMode::fromInput($validated['mode'] ?? null),
+                $validated['message'],
+                array_values((array) ($validated['document_ids'] ?? [])),
+                $validated['conversation_id'] ?? null,
+            );
+            $started = hrtime(true);
 
-            if (! empty($validated['conversation_id'])) {
-                $agent->continue($validated['conversation_id'], $user);
-            } else {
-                $agent->forUser($user);
-            }
+            return $agent->stream($message)
+                ->usingProtocol(new MentorChatStreamProtocol($user))
+                ->then(function (StreamedAgentResponse $response) use ($agent, $user, $turnLock, $started, $turns): void {
+                    $turnLock?->release();
+                    $conversationId = $response->conversationId ?? $agent->currentConversation();
 
-            /** @var StreamableAgentResponse $streamable */
-            $streamable = $agent->stream($validated['message']);
-
-            return $this->vercelSseResponse($streamable, $agent, $request, $user->id);
+                    $turns->recordContextSnapshot($agent, $user, $conversationId, 'completed', $response->usage?->toArray(), $started, $response);
+                    $turns->queueSummaryIfNeeded($agent, $user, $conversationId);
+                })
+                ->catch(function (\Throwable $e) use ($agent, $user, $request, $turnLock, $started, $turns): void {
+                    $turnLock?->release();
+                    $turns->recordContextSnapshot($agent, $user, $agent->currentConversation(), 'failed', null, $started);
+                    $this->logChatFailure(
+                        'AdmitMe general chat stream failed during SSE',
+                        $e,
+                        $user->id,
+                        $request,
+                        ['conversation_id' => $agent->currentConversation()],
+                    );
+                })
+                ->toResponse($request);
         } catch (\Throwable $e) {
+            $turnLock?->release();
             $this->logChatFailure(
                 'AdmitMe general chat failed before or while opening stream',
                 $e,
@@ -76,109 +85,6 @@ class AdmitMeGeneralChatController extends Controller
 
             throw $e;
         }
-    }
-
-    /**
-     * Mirror Laravel AI's Vercel stream protocol and append conversation id for the client.
-     */
-    protected function vercelSseResponse(
-        StreamableAgentResponse $streamable,
-        AdmitMeGeneralAgent $agent,
-        AdmitMeGeneralChatRequest $request,
-        int|string|null $userId,
-    ): StreamedResponse {
-        $state = new class
-        {
-            public bool $streamStarted = false;
-
-            /** @var array<string, true> */
-            public array $toolCalls = [];
-
-            public ?array $lastStreamEndEvent = null;
-        };
-
-        return response()->stream(function () use ($streamable, $agent, $state, $request, $userId): void {
-            try {
-                foreach ($streamable as $event) {
-                    if ($event instanceof StreamStart) {
-                        if ($state->streamStarted) {
-                            continue;
-                        }
-
-                        $state->streamStarted = true;
-                    }
-
-                    if ($event instanceof ToolCall) {
-                        $state->toolCalls[$event->toolCall->id] = true;
-                    }
-
-                    if ($event instanceof ToolResult && ! isset($state->toolCalls[$event->toolResult->id])) {
-                        continue;
-                    }
-
-                    if ($event instanceof StreamEnd) {
-                        $state->lastStreamEndEvent = $event->toVercelProtocolArray();
-
-                        continue;
-                    }
-
-                    $data = $event->toVercelProtocolArray();
-                    if (empty($data)) {
-                        continue;
-                    }
-
-                    echo 'data: '.json_encode($data)."\n\n";
-                    $this->flushStreamBuffer();
-                }
-
-                if ($state->lastStreamEndEvent !== null) {
-                    echo 'data: '.json_encode($state->lastStreamEndEvent)."\n\n";
-                    $this->flushStreamBuffer();
-                }
-
-                $conversationId = $agent->currentConversation();
-                if (is_string($conversationId) && $conversationId !== '') {
-                    echo 'data: '.json_encode([
-                        'type' => 'data-conversation-id',
-                        'data' => ['conversationId' => $conversationId],
-                    ])."\n\n";
-                    $this->flushStreamBuffer();
-                }
-
-                echo "data: [DONE]\n\n";
-                $this->flushStreamBuffer();
-            } catch (\Throwable $e) {
-                $this->logChatFailure(
-                    'AdmitMe general chat stream failed during SSE',
-                    $e,
-                    $userId,
-                    $request,
-                    ['conversation_id' => $agent->currentConversation()],
-                );
-
-                // Headers/body may already be flushing; do not rethrow (avoids "headers already sent" fatals).
-                echo 'data: '.json_encode([
-                    'type' => 'text-delta',
-                    'delta' => "\n\nSomething went wrong while generating a reply. Please try again.",
-                ])."\n\n";
-                echo "data: [DONE]\n\n";
-                $this->flushStreamBuffer();
-            }
-        }, 200, [
-            'Cache-Control' => 'no-cache, no-transform',
-            'Content-Type' => 'text/event-stream',
-            'X-Accel-Buffering' => 'no',
-            'x-vercel-ai-ui-message-stream' => 'v1',
-        ]);
-    }
-
-    protected function flushStreamBuffer(): void
-    {
-        if (ob_get_level() > 0) {
-            ob_flush();
-        }
-
-        flush();
     }
 
     /**
@@ -194,22 +100,18 @@ class AdmitMeGeneralChatController extends Controller
         $payload = array_merge($context, [
             'user_id' => $userId,
             'exception' => $e::class,
-            'error' => $e->getMessage(),
+            // Provider errors can echo keys or the student's text back: redact before logging (Phase 11).
+            'error' => RunInstrumentation::redact($e->getMessage()),
             'file' => $e->getFile(),
             'line' => $e->getLine(),
             'url' => $request->fullUrl(),
             'ip' => $request->ip(),
-            'trace' => $e->getTraceAsString(),
+            'trace' => RunInstrumentation::redact($e->getTraceAsString()),
         ]);
 
         if ($e instanceof RequestException && $e->response !== null) {
             $payload['upstream_http_status'] = $e->response->status();
-            $body = $e->response->body();
-            $payload['upstream_body'] = Str::limit($body, 8000, '…');
-            $json = $e->response->json();
-            if (is_array($json)) {
-                $payload['upstream_json'] = $json;
-            }
+            $payload['upstream_body'] = RunInstrumentation::redact(Str::limit($e->response->body(), 8000, '…'));
         }
 
         Log::error($message, $payload);

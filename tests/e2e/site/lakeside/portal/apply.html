@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Step 1 of 3 · Personal details · Synthetic Lakeside application</title>
+<style>body{font-family:system-ui,sans-serif;max-width:620px;margin:40px auto;padding:0 16px}label{display:block;margin-top:14px;font-weight:600}input,select{width:100%;padding:8px;margin-top:4px;box-sizing:border-box}button{margin-top:20px;padding:9px 16px}#form-alert{color:#b00020}</style>
+<script src="portal.js"></script></head>
+<body>
+<p id="who"></p>
+<h1>First-year application — Fall 2027</h1>
+<h2>Step 1 of 3: Personal details</h2>
+<p role="alert" id="form-alert" hidden></p>
+<form id="step1">
+  <label for="first_name">Legal first name</label>
+  <input id="first_name" name="first_name" required>
+  <label for="last_name">Legal last name</label>
+  <input id="last_name" name="last_name" required>
+  <label for="email">Email address</label>
+  <input id="email" name="email" type="email" required>
+  <label for="country">Country of residence</label>
+  <select id="country" name="country" required>
+    <option value="">Choose…</option>
+    <option>Ghana</option><option>Kenya</option><option>Nigeria</option><option>South Africa</option><option>United Kingdom</option><option>United States</option>
+  </select>
+  <label for="citizenship">Citizenship</label>
+  <input id="citizenship" name="citizenship" required>
+  <label for="phone">Phone number (optional)</label>
+  <input id="phone" name="phone" type="tel">
+  <button type="submit">Save and continue</button>
+</form>
+<script>
+if (LakesidePortal.requireLogin()) LakesidePortal.bindStep('step1', 'step2.html');
+</script>
+</body></html>

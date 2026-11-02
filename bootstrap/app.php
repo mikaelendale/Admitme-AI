@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsurePlatformAccess;
 use App\Http\Middleware\EnsureUserIsOnboarded;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Jobs\BuildUserAiContextJob;
 use App\Models\OnboardingProfile;
 use Illuminate\Console\Scheduling\Schedule;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -19,6 +21,10 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
+        then: function (): void {
+            // The browser extension's stateless API (bearer token, no session or CSRF).
+            Route::group([], __DIR__.'/../routes/browser.php');
+        },
     )
     ->withSchedule(function (Schedule $schedule): void {
         $schedule->call(function (): void {
@@ -46,6 +52,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'onboarded' => EnsureUserIsOnboarded::class,
             'platform.access' => EnsurePlatformAccess::class,
             'quota' => CheckFeatureQuota::class,
+            // `throttle:N,M` counts each route on its own (Laravel's default shares one counter per user).
+            'throttle' => ThrottleRequestsPerRoute::class,
         ]);
 
         $middleware->web(append: [

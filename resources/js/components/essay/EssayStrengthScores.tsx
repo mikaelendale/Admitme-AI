@@ -1,7 +1,7 @@
 'use client';
 
-import type { EssayRoastScores } from '@/types/essay';
 import { cn } from '@/lib/utils';
+import type { EssayRoastScores } from '@/types/essay';
 
 const ORDER: (keyof EssayRoastScores)[] = [
     'authenticity',
@@ -21,55 +21,75 @@ const LABELS: Record<keyof EssayRoastScores, string> = {
 
 function barColor(score: number): string {
     if (score <= 4) {
-        return 'bg-destructive/85';
-    }
-    if (score <= 7) {
-        return 'bg-amber-500/90';
+        return 'bg-destructive';
     }
 
-    return 'bg-emerald-600/90';
+    if (score <= 7) {
+        return 'bg-amber-500';
+    }
+
+    return 'bg-emerald-500';
 }
 
 type Props = {
     scores: EssayRoastScores;
     show_reasoning?: boolean;
+    className?: string;
 };
 
-export function EssayStrengthScores({ scores, show_reasoning = true }: Props) {
+/** Five 0–10 scores as one quiet list: label, bar, score, and the model's reasoning underneath. */
+export function EssayStrengthScores({
+    scores,
+    show_reasoning = true,
+    className,
+}: Props) {
     return (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <ul
+            className={cn(
+                'divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card',
+                className,
+            )}
+        >
             {ORDER.map((key) => {
                 const row = scores[key];
-                const s = Math.max(0, Math.min(10, Math.round(Number(row?.score ?? 0))));
+                const s = Math.max(
+                    0,
+                    Math.min(10, Math.round(Number(row?.score ?? 0))),
+                );
 
                 return (
-                    <div
-                        key={key}
-                        className="rounded-lg border border-border/60 bg-card/40 p-3 shadow-xs"
-                    >
-                        <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <li key={key} className="px-4 py-3.5 sm:px-5">
+                        <div className="flex items-center gap-3 sm:gap-4">
+                            <span className="w-28 shrink-0 text-[13.5px] font-medium text-foreground sm:w-36">
                                 {LABELS[key]}
                             </span>
-                            <span className="tabular-nums text-sm font-semibold text-foreground">
+                            <span
+                                aria-hidden
+                                className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                            >
+                                <span
+                                    className={cn(
+                                        'block h-full rounded-full transition-[width] duration-500',
+                                        barColor(s),
+                                    )}
+                                    style={{ width: `${s * 10}%` }}
+                                />
+                            </span>
+                            <span className="nums w-11 shrink-0 text-right text-[13.5px] font-semibold text-foreground">
                                 {s}
-                                <span className="text-muted-foreground">/10</span>
+                                <span className="font-normal text-muted-foreground">
+                                    /10
+                                </span>
                             </span>
                         </div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div
-                                className={cn('h-full rounded-full transition-all', barColor(s))}
-                                style={{ width: `${s * 10}%` }}
-                            />
-                        </div>
                         {show_reasoning && row?.reasoning ? (
-                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
                                 {row.reasoning}
                             </p>
                         ) : null}
-                    </div>
+                    </li>
                 );
             })}
-        </div>
+        </ul>
     );
 }

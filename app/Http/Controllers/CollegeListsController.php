@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Domain\Applications\ApplicationWorkspace;
+use App\Domain\Applications\CollegeListService;
+use App\Domain\Discovery\CollegeAssessor;
+use App\Domain\Shared\ChangeSource;
 use App\Http\Requests\StoreManualCollegeListSchoolRequest;
 use App\Http\Requests\UpdateCollegeListSchoolRequest;
 use App\Models\CollegeListRun;
@@ -9,25 +13,28 @@ use App\Models\CollegeListSchool;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CollegeListsController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, CollegeAssessor $assessor): Response
     {
         $user = $request->user();
 
         $councilRows = $user
             ->collegeListSchools()
             ->active()
+            ->with('application:id,college_list_school_id')
             ->orderByRaw("CASE tier WHEN 'reach' THEN 1 WHEN 'match' THEN 2 WHEN 'safety' THEN 3 ELSE 4 END")
             ->orderBy('school_name')
             ->get();
 
+        $assessments = $assessor->assessMany($user, $councilRows);
+
         $colleges = $councilRows
-            ->map(fn (CollegeListSchool $s) => $this->councilSchoolToPageRow($s))
+            ->map(fn (CollegeListSchool $s) => $this->councilSchoolToPageRow($s, $assessments[(string) $s->id] ?? null))
             ->values()
             ->all();
 
@@ -70,92 +77,128 @@ class CollegeListsController extends Controller
             ->all();
     }
 
-    public function storeManual(StoreManualCollegeListSchoolRequest $request): JsonResponse
+    public function storeManual(StoreManualCollegeListSchoolRequest $request, CollegeListService $colleges): JsonResponse
     {
-        $user = $request->user();
-        $name = trim((string) $request->validated('school_name'));
-        $tier = (string) $request->validated('tier');
         $notes = $request->validated('student_notes');
 
-        $slug = Str::slug($name);
-        if ($slug === '') {
-            return response()->json(['message' => 'Could not derive a school identifier from that name.'], 422);
-        }
+        $school = $colleges->addManual(
+            $request->user(),
+            (string) $request->validated('school_name'),
+            (string) $request->validated('tier'),
+            $notes !== null ? (string) $notes : null,
+            ChangeSource::studentManual($request->user(), 'college-lists.schools.manual'),
+        );
 
-        $exists = CollegeListSchool::query()
-            ->where('user_id', $user->id)
-            ->where('school_slug', $slug)
-            ->exists();
-
-        if ($exists) {
-            return response()->json(['message' => 'A school with a similar name is already on your list.'], 422);
-        }
-
-        CollegeListSchool::query()->create([
-            'user_id' => $user->id,
-            'school_name' => $name,
-            'school_slug' => $slug,
-            'tier' => $tier,
-            'fit_score' => 50,
-            'why_blurb' => '',
-            'student_notes' => $notes !== null && $notes !== '' ? (string) $notes : null,
-            'application_status' => 'not_started',
-            'is_removed' => false,
-        ]);
-
-        return response()->json(['ok' => true], 201);
+        return response()->json(['ok' => true, 'id' => (string) $school->id, 'revision' => $school->revision], 201);
     }
 
     public function update(
         UpdateCollegeListSchoolRequest $request,
         CollegeListSchool $collegeListSchool,
+        CollegeListService $colleges,
     ): JsonResponse {
-        $user = $request->user();
-        if ((int) $collegeListSchool->user_id !== (int) $user->id || $collegeListSchool->is_removed) {
-            abort(404);
-        }
+        Gate::authorize('update', $collegeListSchool);
 
         $data = $request->validated();
-        if (array_key_exists('application_status', $data)) {
-            $collegeListSchool->application_status = $data['application_status'];
-        }
-        if (array_key_exists('student_notes', $data)) {
-            $collegeListSchool->student_notes = $data['student_notes'];
-        }
-        $collegeListSchool->save();
+        $expectedRevision = $data['expected_revision'] ?? null;
+        unset($data['expected_revision']);
+
+        $school = $colleges->update(
+            $collegeListSchool,
+            $data,
+            $expectedRevision !== null ? (int) $expectedRevision : null,
+            ChangeSource::studentManual($request->user(), 'college-lists.school.update'),
+        );
+
+        return response()->json([
+            'ok' => true,
+            'revision' => $school->revision,
+            'choiceStatus' => $school->choice_status->value,
+            'applicationStatus' => $school->application_status ?? 'not_started',
+            'applicationId' => $school->application()->value('id'),
+        ]);
+    }
+
+    public function destroy(Request $request, CollegeListSchool $collegeListSchool, CollegeListService $colleges): JsonResponse
+    {
+        Gate::authorize('delete', $collegeListSchool);
+
+        $expectedRevision = $request->integer('expected_revision') ?: null;
+
+        $colleges->archive(
+            $collegeListSchool,
+            $expectedRevision,
+            ChangeSource::studentManual($request->user(), 'college-lists.school.destroy'),
+        );
 
         return response()->json(['ok' => true]);
     }
 
-    public function destroy(Request $request, CollegeListSchool $collegeListSchool): JsonResponse
+    public function show(Request $request, CollegeListSchool $collegeListSchool, CollegeAssessor $assessor): Response
     {
-        $user = $request->user();
-        if ((int) $collegeListSchool->user_id !== (int) $user->id || $collegeListSchool->is_removed) {
-            abort(404);
-        }
-
-        $collegeListSchool->is_removed = true;
-        $collegeListSchool->save();
-
-        return response()->json(['ok' => true]);
-    }
-
-    public function show(Request $request, CollegeListSchool $collegeListSchool): Response
-    {
-        $user = $request->user();
-        if ((int) $collegeListSchool->user_id !== (int) $user->id || $collegeListSchool->is_removed) {
-            abort(404);
-        }
+        Gate::authorize('view', $collegeListSchool);
 
         return Inertia::render('college-lists/school', [
-            'school' => $this->councilSchoolToPageRow($collegeListSchool),
+            'school' => $this->councilSchoolToPageRow($collegeListSchool, $assessor->assess($request->user(), $collegeListSchool)),
         ]);
     }
 
     /**
+     * Add some research suggestions to the shortlist and dismiss others in one decision.
+     */
+    public function reviewSuggestions(Request $request, CollegeListService $colleges): JsonResponse
+    {
+        $validated = $request->validate([
+            'add' => ['present', 'array', 'max:50'],
+            'add.*' => ['string', 'max:26'],
+            'dismiss' => ['present', 'array', 'max:50'],
+            'dismiss.*' => ['string', 'max:26'],
+        ]);
+
+        if ($validated['add'] === [] && $validated['dismiss'] === []) {
+            return response()->json(['message' => 'Choose at least one suggestion.', 'errors' => ['add' => ['Choose at least one suggestion.']]], 422);
+        }
+
+        $receipt = $colleges->reviewSuggestions(
+            $request->user(),
+            array_values($validated['add']),
+            array_values($validated['dismiss']),
+            ChangeSource::studentManual($request->user(), 'college-lists.suggestions.review'),
+        );
+
+        return response()->json(['ok' => true, ...$receipt]);
+    }
+
+    /**
+     * Side-by-side view of up to four of the student's own colleges.
+     */
+    public function compare(Request $request, CollegeAssessor $assessor, ApplicationWorkspace $workspace): Response
+    {
+        $ids = array_slice(array_values(array_filter(explode(',', (string) $request->query('ids', '')))), 0, 4);
+
+        $schools = CollegeListSchool::query()
+            ->where('user_id', $request->user()->getKey())
+            ->whereIn('id', $ids)
+            ->with('application')
+            ->get()
+            ->sortBy(fn (CollegeListSchool $s) => array_search((string) $s->id, $ids, true))
+            ->values();
+
+        $assessments = $assessor->assessMany($request->user(), $schools);
+
+        return Inertia::render('college-lists/compare', [
+            'colleges' => $schools->map(fn (CollegeListSchool $s) => [
+                ...$this->councilSchoolToPageRow($s, $assessments[(string) $s->id] ?? null),
+                'application' => $s->application !== null ? $workspace->summary($s->application) : null,
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $assessment
      * @return array<string, mixed>
      */
-    protected function councilSchoolToPageRow(CollegeListSchool $s): array
+    protected function councilSchoolToPageRow(CollegeListSchool $s, ?array $assessment = null): array
     {
         $deadline = collect([
             $s->ea_deadline,
@@ -204,6 +247,12 @@ class CollegeListsController extends Controller
             'admissionsCycleLabel' => $s->admissions_cycle_label ?? '',
             'applicationStatus' => $s->application_status ?? 'not_started',
             'studentNotes' => $s->student_notes ?? '',
+            'choiceStatus' => $s->choice_status->value,
+            'revision' => (int) $s->revision,
+            'applicationId' => $s->application?->id,
+            'runId' => $s->college_list_run_id !== null ? (string) $s->college_list_run_id : null,
+            'notablePrograms' => array_values((array) ($s->notable_programs ?? [])),
+            'assessment' => $assessment,
         ];
     }
 

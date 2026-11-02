@@ -3,6 +3,7 @@
 import { router } from '@inertiajs/react';
 import { WarningCircle } from '@phosphor-icons/react';
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -10,7 +11,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { edit as billingEdit } from '@/routes/billing';
 import type { QuotaFeatureDetail } from '@/types/feature-quotas';
 
@@ -18,6 +18,7 @@ function formatReset(iso: string | null | undefined): string | null {
     if (!iso) {
         return null;
     }
+
     try {
         const d = new Date(iso);
 
@@ -58,7 +59,11 @@ export function QuotaExhaustedModal({
             >
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-lg">
-                        <WarningCircle className="size-5 text-amber-600" weight="bold" aria-hidden />
+                        <WarningCircle
+                            className="size-5 text-amber-600"
+                            weight="bold"
+                            aria-hidden
+                        />
                         You&apos;ve reached your limit
                     </DialogTitle>
                     <DialogDescription asChild>
@@ -74,22 +79,29 @@ export function QuotaExhaustedModal({
                                         <>
                                             {' '}
                                             — next slot frees around{' '}
-                                            <span className="text-foreground">{reset}</span>.
+                                            <span className="text-foreground">
+                                                {reset}
+                                            </span>
+                                            .
                                         </>
                                     ) : null}
                                 </p>
                             ) : (
-                                <p>You&apos;ve reached the limit for {label}.</p>
+                                <p>
+                                    You&apos;ve reached the limit for {label}.
+                                </p>
                             )}
                             {isTrial ? (
                                 <p>
-                                    Your trial includes tight caps so everyone gets a fair try. Upgrade to
-                                    Sprint or Pro for higher monthly limits.
+                                    Your trial includes tight caps so everyone
+                                    gets a fair try. Upgrade to Sprint or Pro
+                                    for higher monthly limits.
                                 </p>
                             ) : (
                                 <p>
-                                    You can wait for your usage window to roll forward or upgrade if you need
-                                    more capacity.
+                                    You can wait for your usage window to roll
+                                    forward or upgrade if you need more
+                                    capacity.
                                 </p>
                             )}
                         </div>
@@ -110,7 +122,12 @@ export function QuotaExhaustedModal({
                     >
                         {busy ? 'Opening billing…' : 'View plans & billing'}
                     </Button>
-                    <Button type="button" variant="ghost" className="w-full" onClick={() => onOpenChange(false)}>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        className="w-full"
+                        onClick={() => onOpenChange(false)}
+                    >
                         Got it
                     </Button>
                 </div>

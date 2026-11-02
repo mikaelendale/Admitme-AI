@@ -19,11 +19,13 @@ export async function consumeVercelAiStream(
         const text = await response.text();
 
         let detail = text.slice(0, 2000);
+
         try {
             const parsed = JSON.parse(text) as {
                 message?: string;
                 errors?: Record<string, string[]>;
             };
+
             if (parsed.message) {
                 detail = parsed.message;
             } else if (parsed.errors) {
@@ -38,9 +40,7 @@ export async function consumeVercelAiStream(
             detail,
         );
 
-        throw new Error(
-            detail || text || `Stream failed (${response.status})`,
-        );
+        throw new Error(detail || text || `Stream failed (${response.status})`);
     }
 
     const reader = response.body?.getReader();
@@ -86,94 +86,31 @@ export async function consumeVercelAiStream(
                         onTextDelta(json.delta);
                     }
                 } catch (parseErr) {
-                    console.warn('[consumeVercelAiStream] Skipped malformed SSE line', {
-                        preview: payload.slice(0, 200),
-                        error:
-                            parseErr instanceof Error
-                                ? parseErr.message
-                                : String(parseErr),
-                    });
+                    console.warn(
+                        '[consumeVercelAiStream] Skipped malformed SSE line',
+                        {
+                            preview: payload.slice(0, 200),
+                            error:
+                                parseErr instanceof Error
+                                    ? parseErr.message
+                                    : String(parseErr),
+                        },
+                    );
                 }
             }
         }
     }
 }
 
-const TOOL_LABELS: Record<string, string> = {
-    'GetStudentAdmissionContextTool': 'Reading your profile',
-    'GetStudentCollegeList': 'Loading your college list',
-    'StartEssayRunTool': 'Starting essay',
-    'StartGapFixTool': 'Analyzing gaps',
-    'StartEssayRoastTool': 'Roasting your essay',
-    'StartWhyThisSchoolTool': 'Drafting Why This School',
-    'StartCollegeListCouncilJobTool': 'Building your list',
-    'RunCollegeListAgentTool': 'Building your list',
-    'UpsertStudentCollegeList': 'Updating your list',
-    'GetCollegeListRunArtifactsTool': 'Checking results',
-    'WebSearch': 'Searching the web',
-    'web_search': 'Searching the web',
-};
-
-const TOOL_ICONS: Record<string, string> = {
-    'GetStudentAdmissionContextTool': 'profile',
-    'GetStudentCollegeList': 'list',
-    'StartEssayRunTool': 'essay',
-    'StartGapFixTool': 'gap',
-    'StartEssayRoastTool': 'roast',
-    'StartWhyThisSchoolTool': 'essay',
-    'StartCollegeListCouncilJobTool': 'council',
-    'RunCollegeListAgentTool': 'council',
-    'UpsertStudentCollegeList': 'list',
-    'GetCollegeListRunArtifactsTool': 'list',
-    'WebSearch': 'search',
-    'web_search': 'search',
-};
-
-export type StreamToolStep = {
-    id: string;
-    label: string;
-    icon: string;
-    status: 'running' | 'done';
-    toolName?: string;
-};
-
-export function streamEventLabel(part: VercelAiStreamPart): string | null {
-    switch (part.type) {
-        case 'start':
-        case 'text-start':
-        case 'text-delta':
-        case 'text-end':
-        case 'data-conversation-id':
-            return null;
-        case 'finish':
-            return null;
-        case 'tool-input-available': {
-            return TOOL_LABELS[String(part.toolName ?? '')] ?? 'Working on it';
-        }
-        case 'tool-output-available':
-            return null;
-        default:
-            return null;
-    }
-}
-
-export function streamEventToStep(part: VercelAiStreamPart): StreamToolStep | null {
-    if (part.type === 'tool-input-available') {
-        const name = String(part.toolName ?? '');
-        return {
-            id: String(part.toolCallId ?? crypto.randomUUID()),
-            label: TOOL_LABELS[name] ?? 'Working on it',
-            icon: TOOL_ICONS[name] ?? 'default',
-            status: 'running',
-            toolName: name,
-        };
-    }
-    return null;
-}
-
 export function toolCallIdFromOutput(part: VercelAiStreamPart): string | null {
-    if (part.type === 'tool-output-available') {
+    // A failed or denied tool call also ends its step; otherwise its spinner never stops.
+    if (
+        part.type === 'tool-output-available' ||
+        part.type === 'tool-output-error' ||
+        part.type === 'tool-output-denied'
+    ) {
         return String(part.toolCallId ?? '') || null;
     }
+
     return null;
 }

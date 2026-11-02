@@ -1,8 +1,8 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
-import AppLogoIcon from '@/components/app-logo-icon';
-import { dashboard, login, register } from '@/routes';
+import { LogoMark } from '@/components/brand/logo-mark';
 import ModeToggle from '@/components/mode-toggle';
+import { dashboard, login, register } from '@/routes';
 
 const stagger = {
     hidden: { opacity: 0 },
@@ -28,27 +28,6 @@ const item = {
     },
 };
 
-function WelcomeDotPattern() {
-    return (
-        <motion.div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-                backgroundImage:
-                    'radial-gradient(circle at center, color-mix(in oklch, var(--foreground) 16%, transparent) 1px, transparent 1.2px)',
-                backgroundSize: '16px 16px',
-                maskImage:
-                    'linear-gradient(to top, black 0%, black 3%, rgba(0,0,0,0.4) 14%, transparent 26%)',
-                WebkitMaskImage:
-                    'linear-gradient(to top, black 0%, black 3%, rgba(0,0,0,0.4) 14%, transparent 26%)',
-            }}
-        />
-    );
-}
-
 export default function Welcome({
     canRegister = true,
 }: {
@@ -60,12 +39,11 @@ export default function Welcome({
         <>
             <Head title="AdmitMe AI" />
 
-            <div className="fixed right-4 top-4 z-30">
+            <div className="fixed top-4 right-4 z-30">
                 <ModeToggle />
             </div>
 
-            <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-background px-6 text-foreground">
-                <WelcomeDotPattern />
+            <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-canvas px-6 text-foreground">
                 <motion.div
                     className="relative z-10 flex w-full max-w-sm flex-col items-center gap-6 text-center"
                     variants={stagger}
@@ -73,12 +51,14 @@ export default function Welcome({
                     animate="show"
                 >
                     <motion.div variants={item}>
-                        <AppLogoIcon className="size-10 fill-current" />
+                        <span className="flex size-11 items-center justify-center rounded-xl bg-foreground text-background">
+                            <LogoMark className="size-5" />
+                        </span>
                     </motion.div>
 
                     <motion.div
                         variants={item}
-                        className="flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 text-[11px] text-muted-foreground"
+                        className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-[12px] text-muted-foreground"
                     >
                         <span className="relative flex size-1.5">
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
@@ -88,13 +68,13 @@ export default function Welcome({
                     </motion.div>
 
                     <motion.div variants={item} className="space-y-3">
-                        <h1 className="font-serif text-xl leading-tight font-medium tracking-normal text-foreground italic sm:text-2xl sm:tracking-wider">
-                            AdmitMe AI
+                        <h1 className="text-[30px] leading-tight font-semibold tracking-tight text-foreground">
+                            AdmitMe
                         </h1>
-                        <p className="font-serif text-sm leading-relaxed text-muted-foreground italic sm:text-base sm:tracking-wide">
+                        <p className="text-[16px] leading-relaxed text-foreground/80">
                             A calmer way to build a stronger application.
                         </p>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
+                        <p className="text-[14px] leading-relaxed text-muted-foreground">
                             Gap analysis, essay feedback, and strategic guidance
                             — all in one place.
                         </p>
@@ -107,7 +87,7 @@ export default function Welcome({
                         {auth.user ? (
                             <Link
                                 href={dashboard()}
-                                className="w-full rounded-md border border-border bg-foreground py-2 text-sm font-medium text-background transition-colors hover:opacity-90"
+                                className="w-full rounded-full bg-foreground py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
                             >
                                 Open dashboard
                             </Link>
@@ -116,14 +96,14 @@ export default function Welcome({
                                 {canRegister && (
                                     <Link
                                         href={register()}
-                                        className="w-full rounded-md border border-border bg-foreground py-2 text-sm font-medium text-background transition-colors hover:opacity-90"
+                                        className="w-full rounded-full bg-foreground py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
                                     >
                                         Request access
                                     </Link>
                                 )}
                                 <Link
                                     href={login()}
-                                    className="w-full rounded-md border border-border py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                    className="w-full rounded-full border border-border bg-background py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                                 >
                                     Sign in
                                 </Link>

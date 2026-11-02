@@ -1,18 +1,25 @@
+import type { ReactNode } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ReactNode } from 'react';
 
 function textFromChildren(children: ReactNode): string {
-    if (children === null || children === undefined || typeof children === 'boolean') {
+    if (
+        children === null ||
+        children === undefined ||
+        typeof children === 'boolean'
+    ) {
         return '';
     }
+
     if (typeof children === 'string' || typeof children === 'number') {
         return String(children);
     }
+
     if (Array.isArray(children)) {
         return children.map(textFromChildren).join('');
     }
+
     if (typeof children === 'object' && 'props' in children) {
         const el = children as { props?: { children?: ReactNode } };
 
@@ -46,7 +53,7 @@ function ExternalLinkIcon() {
 
 const proseComponents: Components = {
     h1: ({ children }) => (
-        <h1 className="mb-4 mt-6 text-xl font-bold tracking-tight text-foreground first:mt-0 sm:text-2xl">
+        <h1 className="mt-6 mb-4 text-xl font-bold tracking-tight text-foreground first:mt-0 sm:text-2xl">
             {children}
         </h1>
     ),
@@ -56,23 +63,31 @@ const proseComponents: Components = {
         return (
             <h2
                 id={slug || undefined}
-                className="mb-3 mt-8 scroll-mt-20 border-b border-border/40 pb-2 text-lg font-bold text-foreground first:mt-0 sm:text-xl"
+                className="mt-8 mb-3 scroll-mt-20 border-b border-border/40 pb-2 text-lg font-bold text-foreground first:mt-0 sm:text-xl"
             >
                 {children}
             </h2>
         );
     },
     h3: ({ children }) => (
-        <h3 className="mb-2 mt-6 text-base font-semibold text-foreground first:mt-0 sm:text-lg">
+        <h3 className="mt-6 mb-2 text-base font-semibold text-foreground first:mt-0 sm:text-lg">
             {children}
         </h3>
     ),
     h4: ({ children }) => (
-        <h4 className="mb-1.5 mt-4 text-sm font-semibold text-foreground sm:text-base">{children}</h4>
+        <h4 className="mt-4 mb-1.5 text-sm font-semibold text-foreground sm:text-base">
+            {children}
+        </h4>
     ),
-    p: ({ children }) => <p className="mb-3 leading-relaxed text-foreground/90 last:mb-0">{children}</p>,
+    p: ({ children }) => (
+        <p className="mb-3 leading-relaxed text-foreground/90 last:mb-0">
+            {children}
+        </p>
+    ),
     ul: ({ children }) => (
-        <ul className="mb-4 list-disc space-y-1.5 pl-5 marker:text-primary/70">{children}</ul>
+        <ul className="mb-4 list-disc space-y-1.5 pl-5 marker:text-primary/70">
+            {children}
+        </ul>
     ),
     ol: ({ children }) => (
         <ol className="mb-4 list-decimal space-y-1.5 pl-5 marker:font-medium marker:text-muted-foreground">
@@ -80,14 +95,19 @@ const proseComponents: Components = {
         </ol>
     ),
     li: ({ children }) => (
-        <li className="leading-relaxed text-foreground/90 [&>p]:mb-0 [&>ul]:mt-1.5 [&>ol]:mt-1.5">
+        <li className="leading-relaxed text-foreground/90 [&>ol]:mt-1.5 [&>p]:mb-0 [&>ul]:mt-1.5">
             {children}
         </li>
     ),
-    strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-    em: ({ children }) => <em className="italic text-foreground/80">{children}</em>,
+    strong: ({ children }) => (
+        <strong className="font-semibold text-foreground">{children}</strong>
+    ),
+    em: ({ children }) => (
+        <em className="text-foreground/80 italic">{children}</em>
+    ),
     code: ({ className, children, ...props }) => {
-        const isBlock = typeof className === 'string' && className.includes('language-');
+        const isBlock =
+            typeof className === 'string' && className.includes('language-');
 
         if (isBlock) {
             return (
@@ -115,7 +135,8 @@ const proseComponents: Components = {
         </pre>
     ),
     a: ({ href, children }) => {
-        const isExternal = href && (href.startsWith('http://') || href.startsWith('https://'));
+        const isExternal =
+            href && (href.startsWith('http://') || href.startsWith('https://'));
 
         return (
             <a
@@ -130,23 +151,35 @@ const proseComponents: Components = {
         );
     },
     blockquote: ({ children }) => (
-        <blockquote className="mb-4 rounded-r-lg border-l-3 border-primary/60 bg-primary/5 py-2 pl-4 pr-3 text-foreground/80 [&>p]:mb-1 [&>p:last-child]:mb-0">
+        <blockquote className="mb-4 rounded-r-lg border-l-3 border-primary/60 bg-primary/5 py-2 pr-3 pl-4 text-foreground/80 [&>p]:mb-1 [&>p:last-child]:mb-0">
             {children}
         </blockquote>
     ),
     hr: () => <hr className="my-5 border-border/40" />,
     table: ({ children }) => (
         <div className="mb-4 overflow-x-auto rounded-lg border border-border/50">
-            <table className="w-full min-w-[16rem] border-collapse text-sm">{children}</table>
+            <table className="w-full min-w-[16rem] border-collapse text-sm">
+                {children}
+            </table>
         </div>
     ),
-    thead: ({ children }) => <thead className="border-b border-border bg-muted/40">{children}</thead>,
-    tbody: ({ children }) => <tbody className="divide-y divide-border/40">{children}</tbody>,
-    tr: ({ children }) => <tr className="transition-colors hover:bg-muted/20">{children}</tr>,
-    th: ({ children }) => (
-        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</th>
+    thead: ({ children }) => (
+        <thead className="border-b border-border bg-muted/40">{children}</thead>
     ),
-    td: ({ children }) => <td className="px-3 py-2 text-foreground/90">{children}</td>,
+    tbody: ({ children }) => (
+        <tbody className="divide-y divide-border/40">{children}</tbody>
+    ),
+    tr: ({ children }) => (
+        <tr className="transition-colors hover:bg-muted/20">{children}</tr>
+    ),
+    th: ({ children }) => (
+        <th className="px-3 py-2 text-left text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+            {children}
+        </th>
+    ),
+    td: ({ children }) => (
+        <td className="px-3 py-2 text-foreground/90">{children}</td>
+    ),
 };
 
 type Props = {
@@ -157,7 +190,10 @@ type Props = {
 export function ProseMarkdown({ content, className }: Props) {
     return (
         <div className={className}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={proseComponents}>
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={proseComponents}
+            >
                 {content}
             </ReactMarkdown>
         </div>

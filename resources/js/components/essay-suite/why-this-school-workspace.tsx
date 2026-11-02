@@ -1,20 +1,35 @@
 'use client';
 
+import { Link } from '@inertiajs/react';
+import {
+    Buildings,
+    CaretRight,
+    Check,
+    ClockCounterClockwise,
+    Copy,
+    FileText,
+    Lightbulb,
+    Tag,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { EssaySchoolOption } from '@/components/essay-suite/run-types';
+import { EmptyState, IconTile, Section } from '@/components/page/kit';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { useHydrated } from '@/hooks/use-hydrated';
+import { buildEssayRateLimitMessage } from '@/lib/essayRateLimitMessage';
 import {
     buildLaravelJsonHeaders,
     readCsrfTokenFromMeta,
 } from '@/lib/laravelFetch';
-import { buildEssayRateLimitMessage } from '@/lib/essayRateLimitMessage';
-import type { EssaySchoolOption } from '@/components/essay-suite/run-types';
+import { cn } from '@/lib/utils';
+import { collegeLists } from '@/routes';
 import type { WhySchoolDraftRow, WhyThisSchoolPayload } from '@/types/essay';
-import { CaretDown } from '@phosphor-icons/react';
+import { Notice, Working, sentenceCase, toolCardClass } from './ui';
 
 const STAGES = [
     'Pulling school program data…',
@@ -28,18 +43,25 @@ type Props = {
 };
 
 export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
-    const [schoolId, setSchoolId] = useState<string>(() => activeSchools[0]?.id ?? '');
+    const [schoolId, setSchoolId] = useState<string>(
+        () => activeSchools[0]?.id ?? '',
+    );
     const [busy, setBusy] = useState(false);
     const [stageIdx, setStageIdx] = useState(0);
     const [payload, setPayload] = useState<WhyThisSchoolPayload | null>(null);
     const [draftText, setDraftText] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+    const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(
+        null,
+    );
+    const [copied, setCopied] = useState(false);
+    const hydrated = useHydrated();
 
     const selected = activeSchools.find((s) => s.id === schoolId);
 
     const draftsBySchool = useMemo(() => {
         const m = new Map<string, WhySchoolDraftRow[]>();
+
         for (const row of whyDraftRows) {
             const k = row.college_list_school_id;
             const list = m.get(k) ?? [];
@@ -54,6 +76,7 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
         if (!busy) {
             return;
         }
+
         const id = window.setInterval(() => {
             setStageIdx((i) => (i + 1) % STAGES.length);
         }, 2800);
@@ -65,10 +88,12 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
         if (!schoolId) {
             return;
         }
+
         setError(null);
         setRateLimitMessage(null);
         setBusy(true);
         setStageIdx(0);
+
         try {
             const res = await fetch('/essay-suite/why-this-school', {
                 method: 'POST',
@@ -77,18 +102,26 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
                 body: JSON.stringify({ college_list_school_id: schoolId }),
             });
             const raw = await res.text();
-            let data: { payload?: WhyThisSchoolPayload; message?: string; errors?: Record<string, string[]> } =
-                {};
+            let data: {
+                payload?: WhyThisSchoolPayload;
+                message?: string;
+                errors?: Record<string, string[]>;
+            } = {};
+
             try {
                 data = JSON.parse(raw) as typeof data;
             } catch {
                 /* ignore */
             }
+
             if (res.status === 429) {
-                setRateLimitMessage(buildEssayRateLimitMessage('whySchool', res));
+                setRateLimitMessage(
+                    buildEssayRateLimitMessage('whySchool', res),
+                );
 
                 return;
             }
+
             if (res.status === 422) {
                 setError(
                     data.errors?.analysis?.[0] ??
@@ -99,11 +132,13 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
 
                 return;
             }
+
             if (!res.ok) {
                 setError(data.message ?? 'Request failed.');
 
                 return;
             }
+
             if (data.payload) {
                 setPayload(data.payload);
                 setDraftText(data.payload.draft);
@@ -118,6 +153,8 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
     const copyDraft = useCallback(async () => {
         try {
             await navigator.clipboard.writeText(draftText);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1600);
         } catch {
             /* ignore */
         }
@@ -125,122 +162,238 @@ export function WhyThisSchoolWorkspace({ activeSchools, whyDraftRows }: Props) {
 
     if (activeSchools.length === 0) {
         return (
-            <p className="text-sm text-muted-foreground">
-                Add schools to your college list to generate a Why This School draft.
-            </p>
+            <EmptyState
+                icon={
+                    <IconTile
+                        icon={Buildings}
+                        tone="green"
+                        variant="glyph"
+                        size="lg"
+                    />
+                }
+                title="No schools to write about yet"
+                description="Add schools to your college list to generate a Why This School draft."
+                action={
+                    <Button variant="outline" asChild className="rounded-full">
+                        <Link href={collegeLists.url()}>
+                            Open college lists
+                        </Link>
+                    </Button>
+                }
+            />
         );
     }
 
-    return (
-        <div className="space-y-5">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {activeSchools.map((s) => {
-                    const on = s.id === schoolId;
+    const previous = schoolId ? (draftsBySchool.get(schoolId) ?? []) : [];
 
-                    return (
-                        <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => setSchoolId(s.id)}
-                            className={`rounded-lg border p-3 text-left text-sm transition-colors ${
-                                on
-                                    ? 'border-primary/40 bg-primary/5 ring-1 ring-primary/15'
-                                    : 'border-border/60 bg-background/80 hover:bg-muted/30'
-                            }`}
-                        >
-                            <span className="font-medium text-foreground">{s.name}</span>
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
-                                {s.tier} · fit {s.fit_score ?? '—'}
-                            </span>
-                        </button>
-                    );
-                })}
+    return (
+        <div className="space-y-9">
+            <div className={toolCardClass}>
+                <p
+                    id="why-school-label"
+                    className="mb-3 text-[13px] text-muted-foreground"
+                >
+                    School
+                </p>
+                <div className="@container">
+                    <div
+                        role="radiogroup"
+                        aria-labelledby="why-school-label"
+                        className="grid gap-2 @lg:grid-cols-2 @3xl:grid-cols-3"
+                    >
+                        {activeSchools.map((s) => {
+                            const on = s.id === schoolId;
+
+                            return (
+                                <button
+                                    key={s.id}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={on}
+                                    onClick={() => setSchoolId(s.id)}
+                                    className={cn(
+                                        'flex min-h-12 items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition-[background-color,box-shadow] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                                        on
+                                            ? 'bg-card shadow-raised ring-1 ring-foreground/15'
+                                            : 'bg-muted hover:bg-foreground/[0.07]',
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            'flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors',
+                                            on
+                                                ? 'border-foreground bg-foreground'
+                                                : 'border-foreground/25 bg-card',
+                                        )}
+                                    >
+                                        {on ? (
+                                            <span className="size-1.5 rounded-full bg-background" />
+                                        ) : null}
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-[13.5px] font-medium text-foreground">
+                                            {s.name}
+                                        </span>
+                                        <span className="nums block text-[12.5px] text-muted-foreground">
+                                            {sentenceCase(s.tier)} · fit{' '}
+                                            {s.fit_score ?? '—'}
+                                        </span>
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <Button
+                        type="button"
+                        className="h-10 rounded-xl px-4"
+                        disabled={busy || !schoolId}
+                        onClick={() => void generate()}
+                    >
+                        Generate draft
+                    </Button>
+                    <span className="text-[12.5px] leading-snug text-muted-foreground">
+                        Uses this school’s details on your list and your
+                        profile.
+                    </span>
+                </div>
             </div>
 
-            <Button type="button" disabled={busy || !schoolId} onClick={() => void generate()}>
-                Generate draft
-            </Button>
-
             {busy ? (
-                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4" aria-live="polite">
-                    <p className="text-sm font-medium text-foreground">
-                        Writing your Why {selected?.name ?? 'this school'} draft…
-                    </p>
-                    <p className="mt-2 text-sm text-primary">{STAGES[stageIdx]}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">Usually 6–10 seconds</p>
-                </div>
+                <Working
+                    title={`Writing your Why ${selected?.name ?? 'this school'} draft…`}
+                    detail={STAGES[stageIdx]}
+                    hint="Usually 6–10 seconds"
+                />
             ) : null}
 
             {rateLimitMessage ? (
-                <div
-                    className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100"
-                    role="status"
-                >
+                <Notice tone="warning" role="status">
                     {rateLimitMessage}
-                </div>
+                </Notice>
             ) : null}
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {error ? (
+                <Notice tone="danger" role="alert">
+                    {error}
+                </Notice>
+            ) : null}
 
             {payload ? (
-                <div className="space-y-4">
-                    <textarea
-                        value={draftText}
-                        onChange={(e) => setDraftText(e.target.value)}
-                        rows={12}
-                        className="w-full resize-y rounded-lg border border-border/60 bg-background p-3 text-sm leading-relaxed"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="secondary" onClick={() => void copyDraft()}>
-                            Copy to clipboard
-                        </Button>
-                        <Button type="button" variant="outline" onClick={() => void generate()}>
-                            Regenerate
-                        </Button>
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Hooks used
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                            {payload.hooks_used.map((h) => (
-                                <span
-                                    key={h}
-                                    className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-xs text-foreground"
+                <>
+                    <Section
+                        title="First draft"
+                        icon={FileText}
+                        actions={
+                            <>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="gap-1.5 rounded-lg"
+                                    onClick={() => void generate()}
+                                    disabled={busy}
                                 >
-                                    {h}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-amber-900 dark:text-amber-100">
-                            Suggested improvements (personalize these)
-                        </p>
-                        <ol className="mt-2 list-decimal space-y-1 border-l-2 border-amber-500/50 pl-4 text-sm text-muted-foreground">
-                            {payload.suggested_improvements.map((s, i) => (
-                                <li key={i} className="text-amber-950 dark:text-amber-50">
-                                    {s}
-                                </li>
-                            ))}
-                        </ol>
-                    </div>
-                </div>
+                                    Regenerate
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5 rounded-lg"
+                                    onClick={() => void copyDraft()}
+                                >
+                                    {copied ? (
+                                        <Check className="size-4" aria-hidden />
+                                    ) : (
+                                        <Copy className="size-4" aria-hidden />
+                                    )}
+                                    {copied ? 'Copied' : 'Copy to clipboard'}
+                                </Button>
+                            </>
+                        }
+                    >
+                        <textarea
+                            aria-label="Why this school draft"
+                            value={draftText}
+                            onChange={(e) => setDraftText(e.target.value)}
+                            rows={12}
+                            className="block w-full resize-y rounded-2xl border border-border bg-card px-5 py-4 text-[15px] leading-[1.75] text-foreground transition-[border-color,box-shadow] outline-none focus-visible:border-foreground/25 focus-visible:ring-3 focus-visible:ring-ring/20 sm:px-6"
+                        />
+                    </Section>
+
+                    {payload.hooks_used.length > 0 ? (
+                        <Section title="Hooks used" icon={Tag}>
+                            <div className="flex flex-wrap gap-1.5">
+                                {payload.hooks_used.map((h) => (
+                                    <span
+                                        key={h}
+                                        className="inline-flex min-h-7 items-center rounded-lg bg-muted px-2.5 py-1 text-[13px] text-foreground"
+                                    >
+                                        {h}
+                                    </span>
+                                ))}
+                            </div>
+                        </Section>
+                    ) : null}
+
+                    {payload.suggested_improvements.length > 0 ? (
+                        <Section
+                            title="Suggested improvements"
+                            icon={Lightbulb}
+                            description="Personalize these before you use the draft."
+                        >
+                            <ol className="space-y-2.5">
+                                {payload.suggested_improvements.map((s, i) => (
+                                    <li
+                                        key={i}
+                                        className="flex gap-3 text-[14px] leading-relaxed text-foreground/90"
+                                    >
+                                        <span className="nums flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[11.5px] font-semibold text-amber-800 dark:text-amber-200">
+                                            {i + 1}
+                                        </span>
+                                        <span className="min-w-0">{s}</span>
+                                    </li>
+                                ))}
+                            </ol>
+                        </Section>
+                    ) : null}
+                </>
             ) : null}
 
-            {schoolId && (draftsBySchool.get(schoolId)?.length ?? 0) > 0 ? (
-                <Collapsible defaultOpen={false} className="rounded-lg border border-border/60">
-                    <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-foreground hover:bg-muted/30">
-                        Previous drafts
-                        <CaretDown className="size-4" />
+            {previous.length > 0 ? (
+                <Collapsible defaultOpen={false} className="group/prev">
+                    <CollapsibleTrigger className="inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+                        <ClockCounterClockwise className="size-4" aria-hidden />
+                        Previous drafts for {selected?.name ?? 'this school'}
+                        <span className="nums text-muted-foreground/70">
+                            {previous.length}
+                        </span>
+                        <CaretRight
+                            className="size-3.5 transition-transform group-data-[state=open]/prev:rotate-90"
+                            aria-hidden
+                        />
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="border-t border-border/50 px-3 py-2 text-sm text-muted-foreground">
-                        <ul className="space-y-2">
-                            {(draftsBySchool.get(schoolId) ?? []).map((d) => (
-                                <li key={d.id} className="rounded-md bg-muted/20 px-2 py-1.5">
-                                    <span className="text-xs text-muted-foreground">
-                                        {d.created_at ? new Date(d.created_at).toLocaleString() : '—'}
+                    <CollapsibleContent>
+                        <ul className="mt-3 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+                            {previous.map((d) => (
+                                <li key={d.id} className="px-5 py-3.5">
+                                    <span className="nums block text-[12.5px] text-muted-foreground">
+                                        {hydrated && d.created_at
+                                            ? new Date(
+                                                  d.created_at,
+                                              ).toLocaleString(undefined, {
+                                                  month: 'short',
+                                                  day: 'numeric',
+                                                  hour: 'numeric',
+                                                  minute: '2-digit',
+                                              })
+                                            : '—'}
                                     </span>
-                                    <p className="mt-0.5 text-foreground">{d.draft_preview}</p>
+                                    <p className="mt-1 text-[13.5px] leading-relaxed text-foreground">
+                                        {d.draft_preview}
+                                    </p>
                                 </li>
                             ))}
                         </ul>

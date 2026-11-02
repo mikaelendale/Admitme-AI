@@ -117,6 +117,9 @@ export default [
             'resources/js/components/ui/*',
             'resources/js/routes/**',
             'resources/js/wayfinder/**',
+            'browser-extension/dist/**',
+            // Browser smoke harness (its own package.json and conventions), not app code.
+            'tests/e2e/**',
         ],
     },
     prettier, // Turn off all rules that might conflict with Prettier

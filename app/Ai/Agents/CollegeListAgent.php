@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Concerns\UsesConfiguredModel;
 use App\Ai\Tools\AllowedDomainHttpFetchTool;
 use App\Ai\Tools\GetStudentAdmissionContextTool;
 use App\Models\User;
@@ -10,23 +11,18 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Ai\Attributes\MaxSteps;
-use Laravel\Ai\Attributes\Model;
-use Laravel\Ai\Attributes\Provider;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Providers\Tools\WebSearch;
 use Stringable;
 
-#[Provider(Lab::OpenAI)]
-#[Model('gpt-5-nano')]
 #[MaxSteps(16)]
 class CollegeListAgent implements Agent, HasStructuredOutput, HasTools
 {
-    use Promptable;
+    use Promptable, UsesConfiguredModel;
 
     public function __construct(
         public User $user,

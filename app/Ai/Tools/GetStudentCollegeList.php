@@ -2,6 +2,8 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadOnlyTool;
+use App\Domain\Applications\CollegeChoiceStatus;
 use App\Models\CollegeListSchool;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -10,7 +12,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class GetStudentCollegeList implements Tool
+class GetStudentCollegeList implements ReadOnlyTool, Tool
 {
     public function __construct(
         protected User $user,
@@ -19,7 +21,8 @@ class GetStudentCollegeList implements Tool
     public function description(): Stringable|string
     {
         return <<<'TXT'
-Read this student's saved college list from the database (college_list_schools). Returns each row: `id` (ULID — use this verbatim for essay jobs), school name, list type (reach/target/safety), fit score, why text, application workflow status, optional deadlines (EA/ED/RD), private notes, and student_metadata. Use before list balance, deadlines, or **before StartEssayRunTool** so you use real ids—not guesses.
+Read this student's college list from the database (college_list_schools). Returns each row: `id` (ULID — use this verbatim for essay jobs), school name, `list_status`, list type (reach/target/safety), fit score, why text, application workflow status, optional deadlines (EA/ED/RD), private notes, and student_metadata. Use before list balance, deadlines, or **before StartEssayRunTool** so you use real ids—not guesses.
+`list_status` matters: "shortlisted" and "applying" are on the student's saved list; "suggested" came from research and is NOT on the saved list until the student adds it — never call a suggestion saved, and propose it like any new college if the student wants it.
 
 If the response says there are no colleges: **do not call StartEssayRunTool**; explain the list is empty and offer to help build it (e.g. council). If there are several schools and the student has not picked one for the essay run, ask **which college** and show names with their `id`s from this tool.
 TXT;
@@ -75,6 +78,8 @@ TXT;
             'id' => $row->id,
             'school_name' => $row->school_name,
             'school_slug' => $row->school_slug,
+            'list_status' => $row->choice_status->value,
+            'on_saved_list' => $row->choice_status !== CollegeChoiceStatus::Suggested,
             'list_type' => CollegeListSchool::tierToListType($row->tier),
             'fit_score' => $row->fit_score,
             'ai_reasoning' => $row->why_blurb,

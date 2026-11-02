@@ -1,4 +1,5 @@
 import { Form, Head } from '@inertiajs/react';
+import { AlertCircleIcon } from 'lucide-react';
 import { useState } from 'react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
@@ -10,7 +11,6 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
-import { AlertCircleIcon } from 'lucide-react';
 
 type Props = {
     error?: string;

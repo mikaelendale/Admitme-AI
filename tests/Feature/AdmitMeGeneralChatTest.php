@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Ai\Agents\AdmitMeGeneralAgent;
+use App\Ai\Context\ChatMode;
 use App\Ai\Tools\GetCollegeListRunArtifactsTool;
 use App\Ai\Tools\RunCollegeListAgentTool;
 use App\Ai\Tools\StartCollegeListCouncilJobTool;
@@ -50,6 +51,10 @@ class AdmitMeGeneralChatTest extends TestCase
         $raw = $response->streamedContent();
         $this->assertStringContainsString('text-delta', $raw);
         $this->assertStringContainsString('Hello', $raw);
+        $this->assertStringContainsString('"type":"finish"', $raw);
+        $this->assertStringContainsString('"type":"data-conversation-id"', $raw);
+        $this->assertStringEndsWith("data: [DONE]\n\n", $raw);
+        $this->assertSame('no', $response->headers->get('X-Accel-Buffering'));
     }
 
     public function test_general_agent_registers_council_tools_when_enabled_without_sync_fallback(): void
@@ -58,7 +63,7 @@ class AdmitMeGeneralChatTest extends TestCase
         Config::set('college_list_council.sync_fallback', false);
 
         $user = User::factory()->create();
-        $tools = iterator_to_array((new AdmitMeGeneralAgent($user))->tools());
+        $tools = iterator_to_array((new AdmitMeGeneralAgent($user, ChatMode::Agent))->tools());
         $classes = array_map(fn ($t) => $t::class, $tools);
 
         $this->assertContains(StartCollegeListCouncilJobTool::class, $classes);
@@ -72,7 +77,7 @@ class AdmitMeGeneralChatTest extends TestCase
         Config::set('college_list_council.enabled', false);
 
         $user = User::factory()->create();
-        $tools = iterator_to_array((new AdmitMeGeneralAgent($user))->tools());
+        $tools = iterator_to_array((new AdmitMeGeneralAgent($user, ChatMode::Agent))->tools());
         $classes = array_map(fn ($t) => $t::class, $tools);
 
         $this->assertContains(RunCollegeListAgentTool::class, $classes);
@@ -86,7 +91,7 @@ class AdmitMeGeneralChatTest extends TestCase
         Config::set('college_list_council.sync_fallback', false);
 
         $user = User::factory()->create();
-        $tools = iterator_to_array((new AdmitMeGeneralAgent($user))->tools());
+        $tools = iterator_to_array((new AdmitMeGeneralAgent($user, ChatMode::Agent))->tools());
         $classes = array_map(fn ($t) => $t::class, $tools);
 
         $this->assertContains(WebSearch::class, $classes);
@@ -99,7 +104,7 @@ class AdmitMeGeneralChatTest extends TestCase
         Config::set('college_list_council.sync_fallback', false);
 
         $user = User::factory()->create();
-        $tools = iterator_to_array((new AdmitMeGeneralAgent($user))->tools());
+        $tools = iterator_to_array((new AdmitMeGeneralAgent($user, ChatMode::Agent))->tools());
         $classes = array_map(fn ($t) => $t::class, $tools);
 
         $this->assertNotContains(WebSearch::class, $classes);

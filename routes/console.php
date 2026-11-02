@@ -15,3 +15,18 @@ Schedule::command('admitme:send-deadline-notifications')
 Schedule::command('admitme:notify-expiring-passes')
     ->dailyAt('08:30')
     ->timezone('UTC');
+
+// Phase 9: delete expired export archives and operational records past retention.
+Schedule::command('admitme:prune-data')
+    ->hourly()
+    ->withoutOverlapping();
+
+// Phase 11: log queue backlog, stuck work, stale shared sources, missing provider keys and storage problems.
+Schedule::command('admitme:health --log')
+    ->hourly()
+    ->withoutOverlapping();
+
+// Phase 7: pick up task steps whose worker stopped, and dispatch steps that became ready.
+Schedule::command('admitme:tasks:recover')
+    ->everyMinute()
+    ->withoutOverlapping();

@@ -3,6 +3,7 @@
 namespace App\Services\CollegeList;
 
 use App\Ai\Agents\CollegeListAgent;
+use App\Domain\Applications\CollegeChoiceStatus;
 use App\Models\CollegeListSchool;
 use App\Models\User;
 use Carbon\Carbon;
@@ -22,11 +23,13 @@ class CollegeListAssemblyService
         $action = $payload['action'] ?? 'refine';
         $shouldWipe = $intent === 'generate' || $action === 'generate';
 
+        // Regenerating replaces earlier AI suggestions only. Colleges the student shortlisted or is applying
+        // to are theirs; research never removes them (docs/admitme/decisions.md D-012)...
         if ($shouldWipe) {
             CollegeListSchool::query()
                 ->where('user_id', $user->id)
-                ->where('is_removed', false)
-                ->update(['is_removed' => true]);
+                ->where('choice_status', CollegeChoiceStatus::Suggested)
+                ->update(['is_removed' => true, 'choice_status' => CollegeChoiceStatus::Archived]);
         }
 
         $schools = $payload['schools'] ?? [];
@@ -54,7 +57,8 @@ class CollegeListAssemblyService
                 CollegeListSchool::query()
                     ->where('user_id', $user->id)
                     ->where('school_slug', $normalized)
-                    ->update(['is_removed' => true]);
+                    ->where('choice_status', CollegeChoiceStatus::Suggested)
+                    ->update(['is_removed' => true, 'choice_status' => CollegeChoiceStatus::Archived]);
             }
         }
     }
@@ -62,7 +66,7 @@ class CollegeListAssemblyService
     /**
      * @param  array<string, mixed>  $row
      */
-    public function upsertSchoolRow(User $user, array $row, CarbonInterface $now, ?string $collegeListRunId = null): void
+    public function upsertSchoolRow(User $user, array $row, CarbonInterface $now, ?string $collegeListRunId = null, ?string $agentTaskId = null): void
     {
         $name = trim((string) ($row['school_name'] ?? ''));
         $slugRaw = trim((string) ($row['school_slug'] ?? ''));
@@ -132,13 +136,30 @@ class CollegeListAssemblyService
             $attributes['college_list_run_id'] = $collegeListRunId;
         }
 
-        CollegeListSchool::query()->updateOrCreate(
-            [
-                'user_id' => $user->id,
-                'school_slug' => $slug,
-            ],
-            $attributes,
-        );
+        $existing = CollegeListSchool::query()
+            ->where('user_id', $user->id)
+            ->where('school_slug', $slug)
+            ->first();
+
+        // Research output is a suggestion. It refreshes the details of a college the student already saved,
+        // but never changes that college's list status...
+        $keepsStatus = $existing !== null && in_array($existing->choice_status, [CollegeChoiceStatus::Shortlisted, CollegeChoiceStatus::Applying], true);
+        $attributes['choice_status'] = $keepsStatus ? $existing->choice_status : CollegeChoiceStatus::Suggested;
+
+        // Only a suggestion is the task's artifact; a college the student already saved is not.
+        if ($agentTaskId !== null && ! $keepsStatus) {
+            $attributes['agent_task_id'] = $agentTaskId;
+        }
+
+        $school = $existing ?? new CollegeListSchool;
+        $school->forceFill($attributes);
+
+        // Any change to a saved row moves its revision, so an edit based on the old values is detected...
+        if ($existing !== null && $school->isDirty()) {
+            $school->revision = (int) $existing->revision + 1;
+        }
+
+        $school->save();
     }
 
     protected function nullableString(mixed $v): ?string

@@ -25,6 +25,8 @@ class JobTracking extends Model
 
     public const TYPE_COUNCIL_PREFLIGHT = 'council_preflight';
 
+    public const TYPE_DOCUMENT_PROCESSING = 'document_processing';
+
     /** @var array<string, string> */
     protected $casts = [
         'payload' => 'array',
@@ -59,6 +61,7 @@ class JobTracking extends Model
             self::TYPE_ESSAY_RUN => 'Generating your essay',
             self::TYPE_COLLEGE_LIST_COUNCIL => 'Building your college list',
             self::TYPE_COUNCIL_PREFLIGHT => 'Resuming college list preflight',
+            self::TYPE_DOCUMENT_PROCESSING => 'Reading your document',
             default => 'Background task',
         };
     }

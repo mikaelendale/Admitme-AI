@@ -1,14 +1,39 @@
 'use client';
 
-import { Form, Head, Link, usePage } from '@inertiajs/react';
-import { ArrowSquareOut, Check } from '@phosphor-icons/react';
-import { useEffect, useState } from 'react';
+import { Form, Head, router, usePage } from '@inertiajs/react';
+import {
+    ArrowSquareOut,
+    Bell,
+    BellSimple,
+    Check,
+    EnvelopeSimple,
+} from '@phosphor-icons/react';
+import { useState } from 'react';
+import type { ReactElement } from 'react';
 import { toast } from 'sonner';
+import {
+    EmptyState,
+    IconTile,
+    ListCard,
+    Page,
+    PageHeader,
+    Section,
+    SegmentedTabs,
+} from '@/components/page/kit';
+import { RowList, SettingRow } from '@/components/settings/kit';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { buildLaravelJsonHeaders, readCsrfTokenFromMeta } from '@/lib/laravelFetch';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useHydrated } from '@/hooks/use-hydrated';
+import { AppLayoutHeaderMeta } from '@/layouts/app-layout';
+import {
+    buildLaravelJsonHeaders,
+    readCsrfTokenFromMeta,
+} from '@/lib/laravelFetch';
 import { cn } from '@/lib/utils';
 
 type Filter = 'all' | 'unread' | 'read';
@@ -42,31 +67,19 @@ const EMAIL_PREF_ROWS: {
     key: keyof EmailNotificationPreferences;
     label: string;
 }[] = [
-    {
-        key: 'email_essay_complete',
-        label: 'Email me when essay generation completes',
-    },
-    {
-        key: 'email_college_list',
-        label: 'Email me when my college list is ready',
-    },
-    {
-        key: 'email_gap_fix',
-        label: 'Email me for gap analysis results',
-    },
-    {
-        key: 'email_deadlines',
-        label: 'Email me for deadline reminders',
-    },
-    {
-        key: 'email_pass_expiry',
-        label: 'Email me before my trial or pass expires',
-    },
-    {
-        key: 'email_payment_failed',
-        label: 'Email me if a subscription payment fails',
-    },
+    { key: 'email_essay_complete', label: 'Essay generation finishes' },
+    { key: 'email_college_list', label: 'My college list is ready' },
+    { key: 'email_gap_fix', label: 'Gap analysis results are in' },
+    { key: 'email_deadlines', label: 'A deadline is coming up' },
+    { key: 'email_pass_expiry', label: 'My trial or pass is about to expire' },
+    { key: 'email_payment_failed', label: 'A subscription payment fails' },
 ];
+
+const FILTER_URL: Record<Filter, string> = {
+    all: '/notifications',
+    unread: '/notifications?filter=unread',
+    read: '/notifications?filter=read',
+};
 
 function formatWhen(iso: string): string {
     try {
@@ -93,30 +106,56 @@ function emptyMessage(filter: Filter): string {
     }
 }
 
+/** A small icon-only action with a tooltip (open link, mark read). */
+function RowAction({
+    label,
+    children,
+}: {
+    label: string;
+    children: ReactElement;
+}) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent side="bottom">{label}</TooltipContent>
+        </Tooltip>
+    );
+}
+
+const iconButton =
+    'inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50';
+
 export default function Notifications() {
     const { filter, notifications, unread_count, notification_preferences } =
         usePage<PageProps>().props;
+    const hydrated = useHydrated();
 
     const [prefs, setPrefs] = useState(notification_preferences);
     const [prefsBusy, setPrefsBusy] = useState(false);
+    // Follow the server's preferences when they change (after a reload), like the old effect did.
+    const [prefsSource, setPrefsSource] = useState(notification_preferences);
 
-    useEffect(() => {
+    if (prefsSource !== notification_preferences) {
+        setPrefsSource(notification_preferences);
         setPrefs(notification_preferences);
-    }, [notification_preferences]);
+    }
 
     async function patchEmailPreference(
         key: keyof EmailNotificationPreferences,
         value: boolean,
     ): Promise<void> {
         const token = readCsrfTokenFromMeta();
+
         if (!token) {
             toast.error('Missing security token. Refresh and try again.');
+
             return;
         }
 
         const prev = prefs[key];
         setPrefs((p) => ({ ...p, [key]: value }));
         setPrefsBusy(true);
+
         try {
             const res = await fetch('/settings/notification-preferences', {
                 method: 'PATCH',
@@ -126,6 +165,7 @@ export default function Notifications() {
             const data = (await res.json().catch(() => null)) as {
                 ok?: boolean;
             } | null;
+
             if (!res.ok || !data?.ok) {
                 throw new Error('Request failed');
             }
@@ -140,66 +180,186 @@ export default function Notifications() {
     return (
         <>
             <Head title="Notifications" />
+            <AppLayoutHeaderMeta>
+                {unread_count > 0 ? `${unread_count} unread` : 'All read'}
+            </AppLayoutHeaderMeta>
 
-            <div className="page-shell">
-                <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1">
-                        <h1 className="page-title">Notifications</h1>
-                        <p className="page-description">
-                            Updates from AdmitMe stay here. Filter by read or
-                            unread, open links when available, and mark items
-                            read when you are done.
-                        </p>
-                    </div>
-                    {unread_count > 0 ? (
-                        <Form
-                            action="/notifications/read-all"
-                            method="post"
-                            options={{ preserveScroll: true }}
-                            className="shrink-0"
-                        >
-                            {({ processing }) => (
-                                <Button
-                                    type="submit"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={processing}
-                                    className="gap-1.5"
-                                >
-                                    <Check className="size-4" weight="bold" />
-                                    Mark all read
-                                </Button>
-                            )}
-                        </Form>
-                    ) : null}
-                </header>
-
-                <section
-                    className="mb-6 rounded-xl border border-border/60 bg-card/40 px-4 py-4"
-                    aria-labelledby="email-prefs-heading"
-                >
-                    <h2
-                        id="email-prefs-heading"
-                        className="text-sm font-semibold text-foreground"
-                    >
-                        Email preferences
-                    </h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        In-app notifications always appear here. Choose which
-                        updates we may also send by email.
-                    </p>
-                    <ul className="mt-4 space-y-3">
-                        {EMAIL_PREF_ROWS.map((row) => (
-                            <li
-                                key={row.key}
-                                className="flex items-center justify-between gap-4"
+            <Page width="narrow">
+                <PageHeader
+                    title="Notifications"
+                    description="Updates from AdmitMe. Open a link or mark an item read when you're done."
+                    actions={
+                        unread_count > 0 ? (
+                            <Form
+                                action="/notifications/read-all"
+                                method="post"
+                                options={{ preserveScroll: true }}
                             >
-                                <Label
-                                    htmlFor={`pref-${row.key}`}
-                                    className="max-w-[min(100%,28rem)] cursor-pointer text-sm font-normal leading-snug text-foreground"
+                                {({ processing }) => (
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        disabled={processing}
+                                        className="h-9 gap-1.5 rounded-full px-4"
+                                    >
+                                        <Check
+                                            className="size-4"
+                                            weight="bold"
+                                        />
+                                        Mark all read
+                                    </Button>
+                                )}
+                            </Form>
+                        ) : undefined
+                    }
+                />
+
+                <Section>
+                    <SegmentedTabs<Filter>
+                        label="Notification filters"
+                        className="mb-4"
+                        value={filter}
+                        onChange={(next) => router.visit(FILTER_URL[next])}
+                        items={[
+                            { value: 'all', label: 'All' },
+                            {
+                                value: 'unread',
+                                label: 'Unread',
+                                count: unread_count,
+                            },
+                            { value: 'read', label: 'Read' },
+                        ]}
+                    />
+
+                    {notifications.length === 0 ? (
+                        <EmptyState
+                            icon={
+                                <IconTile
+                                    icon={BellSimple}
+                                    tone="sky"
+                                    variant="glyph"
+                                />
+                            }
+                            title={emptyMessage(filter)}
+                        />
+                    ) : (
+                        <ListCard>
+                            {notifications.map((n) => (
+                                <li
+                                    key={n.id}
+                                    className="flex items-start gap-4 px-5 py-4"
                                 >
-                                    {row.label}
-                                </Label>
+                                    <span className="relative mt-0.5 flex shrink-0">
+                                        <IconTile
+                                            icon={Bell}
+                                            tone={n.read_at ? 'slate' : 'sky'}
+                                            variant="glyph"
+                                        />
+                                        {!n.read_at ? (
+                                            <span
+                                                aria-hidden
+                                                className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-blue-500 ring-2 ring-card"
+                                            />
+                                        ) : null}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p
+                                            className={cn(
+                                                'text-[15px] leading-snug text-foreground',
+                                                n.read_at
+                                                    ? 'font-normal'
+                                                    : 'font-medium',
+                                            )}
+                                        >
+                                            {!n.read_at ? (
+                                                <span className="sr-only">
+                                                    Unread:{' '}
+                                                </span>
+                                            ) : null}
+                                            {n.title}
+                                        </p>
+                                        {n.body ? (
+                                            <p className="mt-0.5 text-[13.5px] leading-snug text-muted-foreground">
+                                                {n.body}
+                                            </p>
+                                        ) : null}
+                                        <p className="nums mt-1 text-[12.5px] text-muted-foreground">
+                                            {hydrated
+                                                ? formatWhen(n.created_at)
+                                                : ' '}
+                                        </p>
+                                    </div>
+                                    <div className="-mr-1.5 flex shrink-0 items-center gap-0.5">
+                                        {n.action_url ? (
+                                            <RowAction label="Open link">
+                                                <a
+                                                    href={n.action_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    aria-label={`Open: ${n.title}`}
+                                                    className={iconButton}
+                                                >
+                                                    <ArrowSquareOut
+                                                        className="size-[18px]"
+                                                        aria-hidden
+                                                    />
+                                                </a>
+                                            </RowAction>
+                                        ) : null}
+                                        {!n.read_at ? (
+                                            <Form
+                                                action={`/notifications/${n.id}/read`}
+                                                method="post"
+                                                options={{
+                                                    preserveScroll: true,
+                                                }}
+                                            >
+                                                {({ processing }) => (
+                                                    <RowAction label="Mark read">
+                                                        <button
+                                                            type="submit"
+                                                            disabled={
+                                                                processing
+                                                            }
+                                                            aria-label={`Mark read: ${n.title}`}
+                                                            className={
+                                                                iconButton
+                                                            }
+                                                        >
+                                                            <Check
+                                                                className="size-[18px]"
+                                                                weight="bold"
+                                                                aria-hidden
+                                                            />
+                                                        </button>
+                                                    </RowAction>
+                                                )}
+                                            </Form>
+                                        ) : null}
+                                    </div>
+                                </li>
+                            ))}
+                        </ListCard>
+                    )}
+                </Section>
+
+                <Section
+                    title="Email me when"
+                    icon={EnvelopeSimple}
+                    description="In-app notifications always appear here. Choose which updates we also send by email."
+                >
+                    <RowList>
+                        {EMAIL_PREF_ROWS.map((row) => (
+                            <SettingRow
+                                key={row.key}
+                                inline
+                                htmlFor={`pref-${row.key}`}
+                                title={
+                                    <span className="font-normal">
+                                        {row.label}
+                                    </span>
+                                }
+                            >
                                 <Switch
                                     id={`pref-${row.key}`}
                                     checked={prefs[row.key]}
@@ -211,115 +371,11 @@ export default function Notifications() {
                                         );
                                     }}
                                 />
-                            </li>
+                            </SettingRow>
                         ))}
-                    </ul>
-                </section>
-
-                <Tabs value={filter} className="mb-6 w-full">
-                    <div className="-mx-1 overflow-x-auto pb-1">
-                        <TabsList
-                            variant="line"
-                            className="inline-flex min-w-min gap-1 px-1"
-                            aria-label="Notification filters"
-                        >
-                            <TabsTrigger value="all" asChild>
-                                <Link href="/notifications">All</Link>
-                            </TabsTrigger>
-                            <TabsTrigger value="unread" asChild>
-                                <Link href="/notifications?filter=unread">
-                                    Unread
-                                </Link>
-                            </TabsTrigger>
-                            <TabsTrigger value="read" asChild>
-                                <Link href="/notifications?filter=read">
-                                    Read
-                                </Link>
-                            </TabsTrigger>
-                        </TabsList>
-                    </div>
-                </Tabs>
-
-                {notifications.length === 0 ? (
-                    <div className="rounded-xl border border-border/60 bg-muted/15 px-4 py-10 text-center text-sm text-muted-foreground">
-                        {emptyMessage(filter)}
-                    </div>
-                ) : (
-                    <ul className="space-y-2">
-                        {notifications.map((n) => (
-                            <li
-                                key={n.id}
-                                className={cn(
-                                    'rounded-xl border border-border/60 bg-card/40 px-4 py-3 transition-colors',
-                                    n.read_at
-                                        ? 'opacity-80'
-                                        : 'border-l-4 border-l-primary border-border/60 bg-primary/5',
-                                )}
-                            >
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                    <div className="min-w-0 flex-1 space-y-1">
-                                        <p className="text-sm font-medium text-foreground">
-                                            {n.title}
-                                        </p>
-                                        {n.body ? (
-                                            <p className="text-sm leading-snug text-muted-foreground">
-                                                {n.body}
-                                            </p>
-                                        ) : null}
-                                        <p className="text-xs text-muted-foreground">
-                                            {formatWhen(n.created_at)}
-                                        </p>
-                                    </div>
-                                    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                                        {n.action_url ? (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="gap-1"
-                                                asChild
-                                            >
-                                                <a
-                                                    href={n.action_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                >
-                                                    Open
-                                                    <ArrowSquareOut
-                                                        className="size-3.5"
-                                                        aria-hidden
-                                                    />
-                                                </a>
-                                            </Button>
-                                        ) : null}
-                                        {!n.read_at ? (
-                                            <Form
-                                                action={`/notifications/${n.id}/read`}
-                                                method="post"
-                                                options={{
-                                                    preserveScroll: true,
-                                                }}
-                                            >
-                                                {({ processing }) => (
-                                                    <Button
-                                                        type="submit"
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        disabled={
-                                                            processing
-                                                        }
-                                                    >
-                                                        Mark read
-                                                    </Button>
-                                                )}
-                                            </Form>
-                                        ) : null}
-                                    </div>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+                    </RowList>
+                </Section>
+            </Page>
         </>
     );
 }

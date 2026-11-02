@@ -1,4 +1,12 @@
-import { Form, Head, Link, usePage } from '@inertiajs/react';
+import { Form, Head, usePage } from '@inertiajs/react';
+import {
+    Archive,
+    Database,
+    FileText,
+    Scales,
+    ShieldCheck,
+    Warning,
+} from '@phosphor-icons/react';
 import { useRef, useState } from 'react';
 import {
     deleteEssays,
@@ -6,8 +14,16 @@ import {
     destroyAccount,
     exportMethod,
 } from '@/actions/App/Http/Controllers/Settings/PrivacyController';
-import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import { IconTile, ListCard, ListRow, Section } from '@/components/page/kit';
+import {
+    fieldClass,
+    Notice,
+    pillButton,
+    RowList,
+    SettingRow,
+    settingsBreadcrumbs,
+} from '@/components/settings/kit';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -21,11 +37,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export default function Privacy({
-    legalVersion,
-}: {
-    legalVersion: string;
-}) {
+export default function Privacy({ legalVersion }: { legalVersion: string }) {
     const { flash } = usePage<{ flash?: { status?: string } }>().props;
     const resetPasswordRef = useRef<HTMLInputElement>(null);
     const accountPasswordRef = useRef<HTMLInputElement>(null);
@@ -35,79 +47,91 @@ export default function Privacy({
         <>
             <Head title="Privacy & data" />
 
-            <div className="space-y-10">
-                <Heading
-                    variant="small"
-                    title="Privacy & data"
-                    description={`Legal documents version ${legalVersion}.`}
-                />
+            {flash?.status === 'responses-deleted' ||
+            flash?.status === 'essays-not-implemented' ? (
+                <div className="mb-8 space-y-2">
+                    {flash?.status === 'responses-deleted' ? (
+                        <Notice tone="success">
+                            Onboarding responses were deleted and knowledge base
+                            cleared.
+                        </Notice>
+                    ) : null}
+                    {flash?.status === 'essays-not-implemented' ? (
+                        <Notice>
+                            Essay drafts are not stored yet — nothing to delete.
+                        </Notice>
+                    ) : null}
+                </div>
+            ) : null}
 
-                {flash?.status === 'responses-deleted' ? (
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                        Onboarding responses were deleted and knowledge base
-                        cleared.
-                    </p>
-                ) : null}
-                {flash?.status === 'essays-not-implemented' ? (
-                    <p className="text-sm text-muted-foreground">
-                        Essay drafts are not stored yet — nothing to delete.
-                    </p>
-                ) : null}
-
-                <section className="space-y-4">
-                    <Heading
-                        variant="small"
-                        title="Your data"
-                        description="Export or remove what we store."
-                    />
-                    <Form
-                        {...exportMethod.form()}
-                        options={{ preserveScroll: true }}
-                    >
-                        {({ processing }) => (
-                            <Button
-                                type="submit"
-                                variant="outline"
-                                disabled={processing}
+            <Section
+                title="Your data"
+                icon={Database}
+                description="Export or remove what we store."
+            >
+                <ListCard>
+                    <ListRow
+                        icon={<IconTile icon={FileText} tone="blue" />}
+                        title="Account details"
+                        description="As a JSON file."
+                        trailing={
+                            <Form
+                                {...exportMethod.form()}
+                                options={{ preserveScroll: true }}
                             >
-                                Download my data
-                            </Button>
-                        )}
-                    </Form>
-                </section>
-
-                <section className="space-y-3">
-                    <Heading
-                        variant="small"
-                        title="Legal"
-                        description="Read how we handle your information."
+                                {({ processing }) => (
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        size="sm"
+                                        className="rounded-full px-3.5"
+                                        disabled={processing}
+                                    >
+                                        Download JSON
+                                    </Button>
+                                )}
+                            </Form>
+                        }
                     />
-                    <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant="link"
-                            className="h-auto p-0 text-primary"
-                            asChild
-                        >
-                            <Link href="/legal/privacy">Privacy policy</Link>
-                        </Button>
-                        <Button
-                            variant="link"
-                            className="h-auto p-0 text-primary"
-                            asChild
-                        >
-                            <Link href="/legal/terms">Terms of service</Link>
-                        </Button>
-                    </div>
-                </section>
-
-                <section className="space-y-6 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-                    <Heading
-                        variant="small"
-                        title="Danger zone"
-                        description="These actions cannot be undone."
+                    <ListRow
+                        href="/exports"
+                        icon={<IconTile icon={Archive} tone="violet" />}
+                        title="Full archive"
+                        description="Profile, college list, applications and checklists, tasks, and your documents and writing."
                     />
+                </ListCard>
+            </Section>
 
-                    <div className="flex flex-wrap gap-2">
+            <Section
+                title="Legal"
+                icon={Scales}
+                description={`Documents version ${legalVersion}.`}
+            >
+                <ListCard>
+                    <ListRow
+                        href="/legal/privacy"
+                        icon={<IconTile icon={ShieldCheck} tone="green" />}
+                        title="Privacy policy"
+                        description="How we handle your information."
+                    />
+                    <ListRow
+                        href="/legal/terms"
+                        icon={<IconTile icon={FileText} tone="slate" />}
+                        title="Terms of service"
+                    />
+                </ListCard>
+            </Section>
+
+            <Section
+                title="Danger zone"
+                icon={Warning}
+                description="These actions cannot be undone."
+            >
+                <RowList>
+                    <SettingRow
+                        title="Essays"
+                        description="Delete every saved essay."
+                    >
                         <Form
                             {...deleteEssays.form()}
                             options={{ preserveScroll: true }}
@@ -116,17 +140,25 @@ export default function Privacy({
                                 <Button
                                     type="submit"
                                     variant="outline"
-                                    size="sm"
+                                    className={pillButton}
                                     disabled={processing}
                                 >
                                     Delete all essays
                                 </Button>
                             )}
                         </Form>
+                    </SettingRow>
 
+                    <SettingRow
+                        title="Onboarding responses"
+                        description="Delete your saved onboarding answers and sessions, and clear your AI knowledge base."
+                    >
                         <Dialog open={resetOpen} onOpenChange={setResetOpen}>
                             <DialogTrigger asChild>
-                                <Button variant="outline" size="sm">
+                                <Button
+                                    variant="outline"
+                                    className={pillButton}
+                                >
                                     Delete all responses
                                 </Button>
                             </DialogTrigger>
@@ -162,6 +194,7 @@ export default function Privacy({
                                                     id="confirmation"
                                                     name="confirmation"
                                                     autoComplete="off"
+                                                    className={fieldClass}
                                                 />
                                                 <InputError
                                                     message={
@@ -179,6 +212,7 @@ export default function Privacy({
                                                     type="password"
                                                     name="password"
                                                     autoComplete="current-password"
+                                                    className={fieldClass}
                                                 />
                                                 <InputError
                                                     message={errors.password}
@@ -189,6 +223,7 @@ export default function Privacy({
                                                     <Button
                                                         type="button"
                                                         variant="secondary"
+                                                        className={pillButton}
                                                         onClick={() =>
                                                             resetAndClearErrors()
                                                         }
@@ -199,6 +234,7 @@ export default function Privacy({
                                                 <Button
                                                     type="submit"
                                                     variant="destructive"
+                                                    className={pillButton}
                                                     disabled={processing}
                                                 >
                                                     Delete responses
@@ -209,123 +245,110 @@ export default function Privacy({
                                 </Form>
                             </DialogContent>
                         </Dialog>
-                    </div>
+                    </SettingRow>
 
-                    <div className="space-y-6 border-t border-destructive/20 pt-6">
-                        <Heading
-                            variant="small"
-                            title="Delete account"
-                            description="Delete your account and all of its resources"
-                        />
-                        <div className="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10">
-                            <div className="relative space-y-0.5 text-red-600 dark:text-red-100">
-                                <p className="font-medium">Warning</p>
-                                <p className="text-sm">
-                                    Please proceed with caution, this cannot be
-                                    undone.
-                                </p>
-                            </div>
+                    <SettingRow
+                        title="Account"
+                        description="Delete your account and all of its data, permanently."
+                    >
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button
+                                    variant="destructive"
+                                    className={pillButton}
+                                    data-test="delete-user-button"
+                                >
+                                    Delete account
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogTitle>
+                                    Are you sure you want to delete your
+                                    account?
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Once your account is deleted, all of its
+                                    resources and data will also be permanently
+                                    deleted. This cannot be undone. Enter your
+                                    password to confirm.
+                                </DialogDescription>
 
-                            <Dialog>
-                                <DialogTrigger asChild>
-                                    <Button
-                                        variant="destructive"
-                                        data-test="delete-user-button"
-                                    >
-                                        Delete account
-                                    </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                    <DialogTitle>
-                                        Are you sure you want to delete your
-                                        account?
-                                    </DialogTitle>
-                                    <DialogDescription>
-                                        Once your account is deleted, all of its
-                                        resources and data will also be
-                                        permanently deleted. Please enter your
-                                        password to confirm you would like to
-                                        permanently delete your account.
-                                    </DialogDescription>
+                                <Form
+                                    {...destroyAccount.form()}
+                                    options={{
+                                        preserveScroll: true,
+                                    }}
+                                    onError={() =>
+                                        accountPasswordRef.current?.focus()
+                                    }
+                                    resetOnSuccess
+                                    className="space-y-6"
+                                >
+                                    {({
+                                        resetAndClearErrors,
+                                        processing,
+                                        errors,
+                                    }) => (
+                                        <>
+                                            <div className="grid gap-2">
+                                                <Label
+                                                    htmlFor="privacy-delete-password"
+                                                    className="sr-only"
+                                                >
+                                                    Password
+                                                </Label>
 
-                                    <Form
-                                        {...destroyAccount.form()}
-                                        options={{
-                                            preserveScroll: true,
-                                        }}
-                                        onError={() =>
-                                            accountPasswordRef.current?.focus()
-                                        }
-                                        resetOnSuccess
-                                        className="space-y-6"
-                                    >
-                                        {({
-                                            resetAndClearErrors,
-                                            processing,
-                                            errors,
-                                        }) => (
-                                            <>
-                                                <div className="grid gap-2">
-                                                    <Label
-                                                        htmlFor="privacy-delete-password"
-                                                        className="sr-only"
-                                                    >
-                                                        Password
-                                                    </Label>
+                                                <Input
+                                                    id="privacy-delete-password"
+                                                    ref={accountPasswordRef}
+                                                    type="password"
+                                                    name="password"
+                                                    placeholder="Password"
+                                                    autoComplete="current-password"
+                                                    className={fieldClass}
+                                                />
 
-                                                    <Input
-                                                        id="privacy-delete-password"
-                                                        ref={
-                                                            accountPasswordRef
-                                                        }
-                                                        type="password"
-                                                        name="password"
-                                                        placeholder="Password"
-                                                        autoComplete="current-password"
-                                                    />
+                                                <InputError
+                                                    message={errors.password}
+                                                />
+                                            </div>
 
-                                                    <InputError
-                                                        message={
-                                                            errors.password
-                                                        }
-                                                    />
-                                                </div>
-
-                                                <DialogFooter className="gap-2">
-                                                    <DialogClose asChild>
-                                                        <Button
-                                                            type="button"
-                                                            variant="secondary"
-                                                            onClick={() =>
-                                                                resetAndClearErrors()
-                                                            }
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </DialogClose>
-
+                                            <DialogFooter className="gap-2">
+                                                <DialogClose asChild>
                                                     <Button
-                                                        type="submit"
-                                                        variant="destructive"
-                                                        disabled={processing}
-                                                        data-test="confirm-delete-user-button"
+                                                        type="button"
+                                                        variant="secondary"
+                                                        className={pillButton}
+                                                        onClick={() =>
+                                                            resetAndClearErrors()
+                                                        }
                                                     >
-                                                        Delete account
+                                                        Cancel
                                                     </Button>
-                                                </DialogFooter>
-                                            </>
-                                        )}
-                                    </Form>
-                                </DialogContent>
-                            </Dialog>
-                        </div>
-                    </div>
-                </section>
-            </div>
+                                                </DialogClose>
+
+                                                <Button
+                                                    type="submit"
+                                                    variant="destructive"
+                                                    className={pillButton}
+                                                    disabled={processing}
+                                                    data-test="confirm-delete-user-button"
+                                                >
+                                                    Delete account
+                                                </Button>
+                                            </DialogFooter>
+                                        </>
+                                    )}
+                                </Form>
+                            </DialogContent>
+                        </Dialog>
+                    </SettingRow>
+                </RowList>
+            </Section>
         </>
     );
 }
 
 Privacy.layout = {
-    breadcrumbs: [{ title: 'Privacy', href: '/settings/privacy' }],
+    breadcrumbs: settingsBreadcrumbs('Privacy', '/settings/privacy'),
 };

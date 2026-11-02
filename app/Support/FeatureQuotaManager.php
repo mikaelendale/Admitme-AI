@@ -242,8 +242,7 @@ final class FeatureQuotaManager
             return null;
         }
 
-        $row = DB::table('agent_conversation_messages')
-            ->where('user_id', $user->id)
+        $row = ConversationOwnership::whereUser(DB::table('agent_conversation_messages'), $user->id)
             ->where('agent', AdmitMeGeneralAgent::class)
             ->where('role', 'user')
             ->where('created_at', '>=', $start)
@@ -280,8 +279,7 @@ final class FeatureQuotaManager
 
     private function countChatConversations(User $user): int
     {
-        return (int) DB::table('agent_conversations')
-            ->where('user_id', $user->id)
+        return (int) ConversationOwnership::whereUser(DB::table('agent_conversations'), $user->id)
             ->count();
     }
 
@@ -292,8 +290,7 @@ final class FeatureQuotaManager
             return 0;
         }
 
-        return (int) DB::table('agent_conversation_messages')
-            ->where('user_id', $user->id)
+        return (int) ConversationOwnership::whereUser(DB::table('agent_conversation_messages'), $user->id)
             ->where('agent', AdmitMeGeneralAgent::class)
             ->where('role', 'user')
             ->where('created_at', '>=', $start)
@@ -302,8 +299,7 @@ final class FeatureQuotaManager
 
     private function countChatUserMessagesInConversation(User $user, string $conversationId): int
     {
-        return (int) DB::table('agent_conversation_messages')
-            ->where('user_id', $user->id)
+        return (int) ConversationOwnership::whereUser(DB::table('agent_conversation_messages'), $user->id)
             ->where('conversation_id', $conversationId)
             ->where('agent', AdmitMeGeneralAgent::class)
             ->where('role', 'user')

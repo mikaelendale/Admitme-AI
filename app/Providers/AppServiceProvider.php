@@ -2,22 +2,31 @@
 
 namespace App\Providers;
 
-use App\Ai\Storage\AdmitMeConversationStore;
+use App\Ai\Agents\Subagents\SubagentActivity;
+use App\Ai\Streaming\EarlyToolResults;
 use App\Listeners\LogLaravelAiSdkTelemetry;
 use App\Listeners\NotifyUserOfInvoicePaymentFailure;
 use App\Listeners\RecordOnboardingCheckoutFromStripeWebhook;
+use App\Models\User;
 use App\Services\Billing\ProfileResumePdfImportLimiter;
 use App\Services\CollegeListCouncil\CollegeListCouncilOrchestratorContract;
 use App\Services\CollegeListCouncil\FakeCollegeListCouncilOrchestrator;
 use App\Services\CollegeListCouncil\RealCollegeListCouncilOrchestrator;
+use App\Support\ConversationOwnership;
 use App\Support\FeatureQuotaManager;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
-use Laravel\Ai\Contracts\ConversationStore;
+use Laravel\Ai\Events\AgentFailedOver;
 use Laravel\Ai\Events\AgentStreamed;
 use Laravel\Ai\Events\InvokingTool;
 use Laravel\Ai\Events\PromptingAgent;
@@ -33,9 +42,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(ConversationStore::class, AdmitMeConversationStore::class);
-
         $this->app->bind(PdfParser::class, fn () => new PdfParser);
+
+        // What running specialists are doing, per mentor run (reset between requests and queued jobs).
+        $this->app->scoped(SubagentActivity::class);
+        $this->app->scoped(EarlyToolResults::class);
 
         $this->app->singleton(ProfileResumePdfImportLimiter::class, fn (): ProfileResumePdfImportLimiter => ProfileResumePdfImportLimiter::fromConfig());
 
@@ -56,6 +67,28 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        // A provider that could not answer (e.g. out of credits) and the agent moved on to the next one.
+        Event::listen(AgentFailedOver::class, fn (AgentFailedOver $event) => Log::warning('AI provider failed over', [
+            'agent' => class_basename($event->agent),
+            'from' => $event->provider->name(),
+            'model' => $event->model,
+            'reason' => $event->exception->getMessage(),
+        ]));
+
+        // The mentor's chat shows each tool's result as soon as the tool finishes (see EarlyToolResults).
+        Event::listen(ToolInvoked::class, fn (ToolInvoked $event) => app(EarlyToolResults::class)->record($event));
+
+        // Named limiters keep their own counters (plain "throttle:N,1" shares one counter per user across routes).
+        RateLimiter::for('exports', fn (Request $request) => Limit::perMinute(5)->by('exports:'.($request->user()?->getKey() ?? $request->ip())));
+        RateLimiter::for('export-downloads', fn (Request $request) => Limit::perMinute(30)->by('export-downloads:'.($request->user()?->getKey() ?? $request->ip())));
+        // The extension polls for commands while assistance is active; keyed by its token, not shared with the web app.
+        RateLimiter::for('browser-bridge', fn (Request $request) => Limit::perMinute(240)->by('browser:'.($request->bearerToken() !== null ? sha1($request->bearerToken()) : $request->ip())));
+
+        // The SDK's continue() does not check ownership, so every conversation id is authorized here...
+        Gate::define('access-conversation', fn (User $user, string $conversationId) => ConversationOwnership::userOwnsConversation((int) $user->getKey(), $conversationId)
+            ? Response::allow()
+            : Response::deny('Invalid conversation.'));
 
         Event::listen(WebhookReceived::class, RecordOnboardingCheckoutFromStripeWebhook::class);
         Event::listen(WebhookReceived::class, NotifyUserOfInvoicePaymentFailure::class);

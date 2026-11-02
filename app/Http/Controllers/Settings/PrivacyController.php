@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Domain\Privacy\DataLifecycleService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\DangerDeleteResponsesRequest;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
@@ -104,6 +105,9 @@ class PrivacyController extends Controller
         }
 
         Auth::logout();
+
+        // Files, conversations and caches are not reached by database cascades: remove them first.
+        app(DataLifecycleService::class)->eraseAccountData($user);
 
         $user->delete();
 

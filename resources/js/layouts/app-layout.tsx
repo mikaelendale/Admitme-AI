@@ -1,576 +1,64 @@
 'use client';
 
-import { Link, router, usePage } from '@inertiajs/react';
-import {
-    Bell,
-    ChatsCircle,
-    Clock as ClockPassIcon,
-    CrownSimple,
-    GearSixIcon,
-    HouseSimpleIcon,
-    List as ListIcon,
-    ChartLine,
-    ListChecks,
-    PenNib,
-    SealCheck,
-    SignOut,
-    UserCircle,
-    WarningCircle,
-} from '@phosphor-icons/react';
+import { Link, usePage } from '@inertiajs/react';
+import { ChatCircle, List as ListIcon } from '@phosphor-icons/react';
 import {
     createContext,
+    Fragment,
     useContext,
+    useEffect,
     useLayoutEffect,
-    useMemo,
+    useRef,
     useState,
 } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import AppLogoIcon from '@/components/app-logo-icon';
-import { Breadcrumbs } from '@/components/breadcrumbs';
-import ModeToggle from '@/components/mode-toggle';
-import { Button } from '@/components/ui/button';
 import {
-    Sheet,
-    SheetContent,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from '@/components/ui/sheet';
+    DOCKED_QUERY,
+    MentorProvider,
+    useMentor,
+} from '@/components/mentor/mentor-context';
+import { MentorPanel } from '@/components/mentor/mentor-panel';
+import { CommandMenu } from '@/components/shell/command-menu';
+import { navItemFor, Sidebar } from '@/components/shell/sidebar';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Toaster } from '@/components/ui/sonner';
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-    WorkspaceSidebarNavButtons,
-    isAppWorkspaceNavLink,
-} from '@/components/workspace-sidebar-nav';
-import type { AppWorkspaceNavItem } from '@/components/workspace-sidebar-nav';
+import { useCurrentUrl } from '@/hooks/use-current-url';
+import { useHydrated } from '@/hooks/use-hydrated';
+import { useMediaQuery } from '@/hooks/use-media-query';
 import { cn } from '@/lib/utils';
-import {
-    collegeLists,
-    dashboard,
-    essaySuite,
-    gapFix,
-    logout,
-    profileOverview,
-} from '@/routes';
-import { index as dashboardChatsIndex } from '@/routes/dashboard/chats';
-import { edit as billingEdit } from '@/routes/billing';
-import { edit as editProfile } from '@/routes/profile';
 import type { AppLayoutProps } from '@/types';
-import { Toaster } from '@/components/ui/sonner';
 
-type PlatformAccessShare = {
-    has_access: boolean;
-    source: 'subscription' | 'pass' | 'none';
-    pass_plan: string | null;
-    ends_at: string | null;
-    days_remaining: number | null;
-    enforcement_enabled: boolean;
-    display: { headline: string; price_line: string } | null;
+type HeaderSlots = {
+    setTrailing: Dispatch<SetStateAction<ReactNode>>;
+    setMeta: Dispatch<SetStateAction<ReactNode>>;
 };
 
-function AppSidebarPlanBadge({
-    className,
-    variant = 'rail',
-}: {
-    className?: string;
-    variant?: 'rail' | 'drawer';
-}) {
-    const { auth, platform_access } = usePage<{
-        auth: { user: unknown };
-        platform_access: PlatformAccessShare | null;
-    }>().props;
+const HeaderSlotsContext = createContext<HeaderSlots | null>(null);
 
-    if (!auth.user || !platform_access) {
-        return null;
+function useHeaderSlots(): HeaderSlots {
+    const slots = useContext(HeaderSlotsContext);
+
+    if (!slots) {
+        throw new Error('Header slots are only available inside AppLayout');
     }
 
-    const expiringSoon =
-        platform_access.source === 'pass' &&
-        platform_access.has_access &&
-        platform_access.days_remaining !== null &&
-        platform_access.days_remaining <= 3;
-
-    const locked =
-        !platform_access.has_access && platform_access.enforcement_enabled;
-
-    const Icon = locked
-        ? WarningCircle
-        : platform_access.source === 'subscription'
-          ? CrownSimple
-          : platform_access.source === 'pass'
-            ? expiringSoon
-                ? WarningCircle
-                : ClockPassIcon
-            : SealCheck;
-
-    const endsLabel =
-        platform_access.ends_at != null
-            ? new Date(platform_access.ends_at).toLocaleDateString(undefined, {
-                  dateStyle: 'medium',
-              })
-            : null;
-
-    const tooltipLines: string[] = [];
-    if (locked) {
-        tooltipLines.push('Workspace access expired.');
-        tooltipLines.push('Open Plan & billing to subscribe or buy a pass.');
-    } else if (platform_access.source === 'subscription') {
-        tooltipLines.push('Pro subscription');
-        tooltipLines.push('Active — full access');
-    } else if (platform_access.source === 'pass') {
-        const d = platform_access.display;
-        tooltipLines.push(d?.headline ?? 'Time-limited pass');
-        if (d?.price_line) {
-            tooltipLines.push(d.price_line);
-        }
-        if (endsLabel) {
-            tooltipLines.push(`Access until ${endsLabel}`);
-        }
-        if (platform_access.days_remaining !== null) {
-            tooltipLines.push(
-                `${platform_access.days_remaining} day(s) remaining`,
-            );
-        }
-    } else if (!platform_access.enforcement_enabled) {
-        tooltipLines.push('Access checks disabled');
-        tooltipLines.push('Enforcement off in this environment');
-    } else {
-        tooltipLines.push('No active pass');
-        tooltipLines.push('Subscribe or purchase access on Plan & billing');
-    }
-
-    const railLabel = locked
-        ? 'Renew'
-        : platform_access.source === 'subscription'
-          ? 'Pro'
-          : platform_access.source === 'pass'
-            ? platform_access.days_remaining !== null
-                ? `${platform_access.days_remaining}d`
-                : platform_access.pass_plan === 'trial'
-                  ? 'Trial'
-                  : platform_access.pass_plan === 'sprint'
-                    ? 'Sprint'
-                    : 'Pass'
-            : !platform_access.enforcement_enabled
-              ? 'Dev'
-              : 'Plan';
-
-    const drawerTitle = locked
-        ? 'Access expired'
-        : platform_access.source === 'subscription'
-          ? 'Pro active'
-          : platform_access.source === 'pass'
-            ? (platform_access.display?.headline ?? 'Pass active')
-            : !platform_access.enforcement_enabled
-              ? 'Enforcement off'
-              : 'Choose a plan';
-
-    const drawerSub =
-        platform_access.source === 'pass' &&
-        platform_access.days_remaining !== null &&
-        !locked
-            ? `${platform_access.days_remaining} days left`
-            : platform_access.source === 'subscription'
-              ? 'Full workspace'
-              : locked
-                ? 'Billing'
-                : null;
-
-    const shellRail = cn(
-        'flex w-[2.75rem] flex-col items-center gap-1 rounded-xl border px-1 py-2 transition-[box-shadow,transform] duration-200',
-        'bg-linear-to-b from-card/90 via-card/50 to-muted/25',
-        'shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--foreground)_8%,transparent)]',
-        'hover:shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--foreground)_12%,transparent),0_0_0_1px_color-mix(in_oklch,var(--primary)_20%,transparent)]',
-        locked &&
-            'border-destructive/35 from-destructive/10 via-destructive/5 to-muted/20 text-destructive shadow-none hover:shadow-[0_0_0_1px_color-mix(in_oklch,var(--destructive)_35%,transparent)]',
-        platform_access.source === 'subscription' &&
-            !locked &&
-            'border-primary/30 from-primary/12 via-primary/5 to-muted/20 text-primary',
-        platform_access.source === 'pass' &&
-            !locked &&
-            !expiringSoon &&
-            'border-amber-500/25 from-amber-500/10 via-amber-500/5 to-muted/20 text-amber-900 dark:text-amber-100',
-        platform_access.source === 'pass' &&
-            !locked &&
-            expiringSoon &&
-            'border-amber-500/40 from-amber-500/15 to-muted/20 text-amber-800 dark:text-amber-200',
-        platform_access.source === 'none' &&
-            !locked &&
-            'border-border/60 text-muted-foreground',
-        className,
-    );
-
-    const shellDrawer = cn(
-        'flex min-w-0 max-w-full flex-1 items-center gap-2.5 rounded-xl border px-3 py-2',
-        'bg--card/80 ',
-        locked && 'border-destructive/30 from-destructive/10 text-destructive',
-        platform_access.source === 'subscription' &&
-            !locked &&
-            'border-primary/25 from-primary/10 text-foreground',
-        platform_access.source === 'pass' &&
-            !locked &&
-            'border-amber-500/20 from-amber-500/8 text-foreground',
-        className,
-    );
-
-    const iconClass =
-        variant === 'drawer' ? 'size-[1.125rem] shrink-0' : 'size-4 shrink-0';
-
-    const innerRail = (
-        <>
-            <Icon className={iconClass} />
-            <span className="max-w-10 truncate text-center text-[8px] font-bold uppercase leading-tight tracking-[0.14em] text-foreground/90">
-                {railLabel}
-            </span>
-        </>
-    );
-
-    const innerDrawer = (
-        <>
-            <span
-                className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60',
-                    locked && 'border-destructive/30 bg-destructive/10',
-                    platform_access.source === 'subscription' &&
-                        !locked &&
-                        'border-primary/25 bg-primary/10',
-                    platform_access.source === 'pass' &&
-                        !locked &&
-                        'border-amber-500/25 bg-amber-500/10',
-                )}
-            >
-                <Icon className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1 text-left">
-                <span className="block truncate text-xs font-semibold tracking-tight text-foreground">
-                    {drawerTitle}
-                </span>
-                {drawerSub ? (
-                    <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                        {drawerSub}
-                    </span>
-                ) : null}
-            </span>
-        </>
-    );
-
-    const triggerClass = variant === 'rail' ? shellRail : shellDrawer;
-
-    const trigger =
-        locked ? (
-            <Link
-                href={billingEdit()}
-                className={cn(
-                    triggerClass,
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                )}
-                aria-label="Plan and access — renew billing"
-            >
-                {variant === 'rail' ? innerRail : innerDrawer}
-            </Link>
-        ) : (
-            <button
-                type="button"
-                className={cn(
-                    triggerClass,
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                )}
-                aria-label="Plan and access status"
-            >
-                {variant === 'rail' ? innerRail : innerDrawer}
-            </button>
-        );
-
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>{trigger}</TooltipTrigger>
-            <TooltipContent
-                side={variant === 'rail' ? 'right' : 'bottom'}
-                sideOffset={8}
-                className="max-w-xs border border  bg-primary-foreground backdrop-blur-sm"
-            >
-                <div className="space-y-1 text-left">
-                    {tooltipLines.map((line, i) => (
-                        <p
-                            key={i}
-                            className={cn(
-                                'text-xs leading-snug',
-                                i === 0
-                                    ? 'font-medium text-foreground'
-                                    : 'text-muted-foreground',
-                            )}
-                        >
-                            {line}
-                        </p>
-                    ))}
-                </div>
-            </TooltipContent>
-        </Tooltip>
-    );
+    return slots;
 }
-
-function AppLayoutDotPattern() {
-    return (
-        <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-0"
-            style={{
-                backgroundImage:
-                    'radial-gradient(circle at center, color-mix(in oklch, var(--foreground) 16%, transparent) 1px, transparent 1.2px)',
-                backgroundSize: '16px 16px',
-                maskImage:
-                    'linear-gradient(to top, black 0%, black 3%, rgba(0,0,0,0.4) 14%, transparent 26%)',
-                WebkitMaskImage:
-                    'linear-gradient(to top, black 0%, black 3%, rgba(0,0,0,0.4) 14%, transparent 26%)',
-            }}
-        />
-    );
-}
-
-const APP_LAYOUT_PRIMARY_NAV: AppWorkspaceNavItem[] = [
-    {
-        key: 'home',
-        icon: HouseSimpleIcon,
-        label: 'Home',
-        href: dashboard(),
-        matchActive: (path) =>
-            path === dashboard.url() || path.startsWith('/dashboard/chat/'),
-    },
-    {
-        key: 'chats',
-        icon: ChatsCircle,
-        label: 'Chats',
-        href: dashboardChatsIndex.url(),
-        matchActive: (path) =>
-            path === dashboardChatsIndex.url() || path.startsWith(`${dashboardChatsIndex.url()}/`),
-    },
-    {
-        key: 'college-lists',
-        icon: ListChecks,
-        label: 'College lists',
-        href: collegeLists(),
-        matchActive: (path) =>
-            path === collegeLists.url() || path.startsWith(`${collegeLists.url()}/`),
-    },
-    {
-        key: 'gap-fix',
-        icon: ChartLine,
-        label: 'Gap + Fix',
-        href: gapFix(),
-        matchActive: (path) =>
-            path === gapFix.url() || path.startsWith(`${gapFix.url()}/`),
-    },
-    {
-        key: 'essay-suite',
-        icon: PenNib,
-        label: 'Essays',
-        href: essaySuite(),
-        matchActive: (path) =>
-            path === essaySuite.url() ||
-            path.startsWith(`${essaySuite.url()}/`),
-    },
-    {
-        key: 'profile-overview',
-        icon: UserCircle,
-        label: 'Profile',
-        href: profileOverview(),
-        matchActive: (path) =>
-            path === profileOverview.url() ||
-            path.startsWith(`${profileOverview.url()}/`),
-    },
-];
-
-const APP_LAYOUT_FOOTER_NAV_MOBILE: AppWorkspaceNavItem[] = [
-    {
-        key: 'notifications',
-        icon: Bell,
-        label: 'Notifications',
-        href: '/notifications',
-        matchActive: (path) => path === '/notifications',
-    },
-    {
-        key: 'settings',
-        icon: GearSixIcon,
-        label: 'Settings',
-        href: editProfile(),
-        matchActive: (path) => path.startsWith('/settings'),
-    },
-];
-
-const APP_LAYOUT_FOOTER_NAV_DESKTOP: AppWorkspaceNavItem[] = [
-    ...APP_LAYOUT_FOOTER_NAV_MOBILE,
-    {
-        key: 'logout',
-        icon: SignOut,
-        label: 'Log out',
-        href: logout.url(),
-        method: 'post',
-        matchActive: () => false,
-        onClick: () => router.flushAll(),
-    },
-];
-
-function footerNavWithNotificationBadge(
-    items: AppWorkspaceNavItem[],
-    unread: number,
-): AppWorkspaceNavItem[] {
-    if (unread <= 0) {
-        return items;
-    }
-
-    return items.map((item) =>
-        item.key === 'notifications' && isAppWorkspaceNavLink(item)
-            ? { ...item, badgeCount: unread }
-            : item,
-    );
-}
-
-const SetAppLayoutHeaderTrailingContext = createContext<Dispatch<
-    SetStateAction<ReactNode>
-> | null>(null);
 
 export function useSetAppLayoutHeaderTrailing(): Dispatch<
     SetStateAction<ReactNode>
 > {
-    const set = useContext(SetAppLayoutHeaderTrailingContext);
-
-    if (!set) {
-        throw new Error(
-            'useSetAppLayoutHeaderTrailing must be used within AppLayout',
-        );
-    }
-
-    return set;
+    return useHeaderSlots().setTrailing;
 }
 
-export default function AppLayout({
-    children,
-    breadcrumbs = [],
-}: AppLayoutProps) {
-    const [mobileNavOpen, setMobileNavOpen] = useState(false);
-    const [headerTrailing, setHeaderTrailing] = useState<ReactNode>(null);
-    const { unread_notification_count = 0 } = usePage<{
-        unread_notification_count?: number;
-    }>().props;
-
-    const footerDesktopNav = useMemo(
-        () =>
-            footerNavWithNotificationBadge(
-                APP_LAYOUT_FOOTER_NAV_DESKTOP,
-                unread_notification_count,
-            ),
-        [unread_notification_count],
-    );
-
-    const footerMobileNav = useMemo(
-        () =>
-            footerNavWithNotificationBadge(
-                APP_LAYOUT_FOOTER_NAV_MOBILE,
-                unread_notification_count,
-            ),
-        [unread_notification_count],
-    );
-
-    return (
-        <SetAppLayoutHeaderTrailingContext.Provider value={setHeaderTrailing}>
-            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                <div className="relative flex h-svh max-h-svh min-h-0 w-full overflow-hidden bg-background">
-                    <AppLayoutDotPattern />
-
-                    <aside
-                        className="relative z-10 hidden h-full min-h-0 w-16 shrink-0 flex-col items-center bg-background lg:flex"
-                        aria-label="Primary navigation"
-                    >
-                        <div className="flex justify-center px-2 py-1 pt-4">
-                            <div className="flex h-8 w-8 items-center justify-center rounded">
-                                <AppLogoIcon className="size-10" />
-                            </div>
-                        </div>
-
-                        {/* <div className="flex w-full justify-center px-1.5 pb-2">
-                            <AppSidebarPlanBadge />
-                        </div> */}
-
-                        <WorkspaceSidebarNavButtons
-                            variant="rail"
-                            primaryItems={APP_LAYOUT_PRIMARY_NAV}
-                            footerItems={footerDesktopNav}
-                            railFooterSlot={<> <ModeToggle />  <AppSidebarPlanBadge /></>}
-                        />
-                    </aside>
-
-                    <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                        <header className="flex shrink-0 items-center gap-2 bg-background px-3 py-3 sm:gap-3 sm:px-4 md:px-6">
-                            <SheetTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="shrink-0 lg:hidden"
-                                    aria-label="Open navigation menu"
-                                >
-                                    <ListIcon className="size-5" />
-                                </Button>
-                            </SheetTrigger>
-
-                            {breadcrumbs.length > 0 ? (
-                                <div className="flex min-w-0 flex-1 items-center">
-                                    <div className="flex max-w-full min-w-0 items-center rounded-lg bg-muted px-2 py-1 sm:px-3 sm:py-1.5">
-                                        <Breadcrumbs
-                                            breadcrumbs={breadcrumbs}
-                                        />
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="min-w-0 flex-1" />
-                            )}
-
-                            <div className="flex shrink-0 items-center gap-2">
-                                {headerTrailing}
-                            </div>
-                        </header>
-
-                        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-                            {children}
-                        </div>
-                    </div>
-                </div>
-                <Toaster richColors closeButton position="top-right" />
-
-                <SheetContent
-                    side="left"
-                    showCloseButton
-                    className="flex w-[min(100vw,18rem)] max-w-[min(100vw,18rem)] flex-col gap-0 border-r border-sidebar-border bg-sidebar p-0 sm:max-w-xs"
-                >
-                    <SheetHeader className="border-b border-sidebar-border px-4 py-3 text-left">
-                        <SheetTitle className="flex flex-col gap-3 text-sidebar-foreground">
-                            <span className="flex items-center gap-3">
-                                <AppLogoIcon className="size-10 shrink-0" />
-                                <span className="truncate text-sm font-semibold tracking-tight">
-                                    AdmitMe
-                                </span>
-                            </span>
-                            <AppSidebarPlanBadge variant="drawer" />
-                        </SheetTitle>
-                    </SheetHeader>
-                    <WorkspaceSidebarNavButtons
-                        variant="drawer"
-                        primaryItems={APP_LAYOUT_PRIMARY_NAV}
-                        footerItems={footerMobileNav}
-                        onItemClick={() => setMobileNavOpen(false)}
-                        drawerFooterTrailing={<ModeToggle />}
-                    />
-                </SheetContent>
-            </Sheet>
-        </SetAppLayoutHeaderTrailingContext.Provider>
-    );
-}
-
+/** Actions shown at the right of the content header while this component is mounted. */
 export function AppLayoutHeaderTrailing({ children }: { children: ReactNode }) {
-    const setTrailing = useSetAppLayoutHeaderTrailing();
+    const { setTrailing } = useHeaderSlots();
     useLayoutEffect(() => {
         setTrailing(children);
 
@@ -578,4 +66,445 @@ export function AppLayoutHeaderTrailing({ children }: { children: ReactNode }) {
     }, [children, setTrailing]);
 
     return null;
+}
+
+/** A short count or status after the page title in the content header. */
+export function AppLayoutHeaderMeta({ children }: { children: ReactNode }) {
+    const { setMeta } = useHeaderSlots();
+    useLayoutEffect(() => {
+        setMeta(children);
+
+        return () => setMeta(null);
+    }, [children, setMeta]);
+
+    return null;
+}
+
+const SIDEBAR_COOKIE = 'sidebar_state';
+
+const DOCK_WIDTH_KEY = 'admitme.mentor.width';
+const DOCK_MIN = 340;
+const DOCK_STEP = 24;
+
+/** The widest the dock may get while leaving the page a usable column. */
+function dockMax(): number {
+    return Math.max(DOCK_MIN, Math.min(760, window.innerWidth - 640));
+}
+
+function readDockWidth(): number | null {
+    try {
+        const stored = Number(window.localStorage.getItem(DOCK_WIDTH_KEY));
+
+        return Number.isFinite(stored) && stored >= DOCK_MIN ? stored : null;
+    } catch {
+        return null;
+    }
+}
+
+function writeDockWidth(width: number | null): void {
+    try {
+        if (width === null) {
+            window.localStorage.removeItem(DOCK_WIDTH_KEY);
+        } else {
+            window.localStorage.setItem(
+                DOCK_WIDTH_KEY,
+                String(Math.round(width)),
+            );
+        }
+    } catch {
+        /* storage unavailable: the width just isn't remembered */
+    }
+}
+
+/**
+ * The docked mentor panel. Its left edge drags to resize (arrow keys when focused, double-click to reset);
+ * the width is remembered per browser. The server renders the default width; a saved one applies after
+ * hydration so the first client render matches the HTML.
+ */
+function MentorDock() {
+    const hydrated = useHydrated();
+    // undefined until the student resizes in this session; then their width (null = back to the default).
+    const [chosen, setWidth] = useState<number | null | undefined>(undefined);
+    const [dragging, setDragging] = useState(false);
+    const dockRef = useRef<HTMLDivElement>(null);
+    // A press becomes a drag only after a few pixels, so a click or double-click never resizes.
+    const drag = useRef<{
+        startX: number;
+        startWidth: number;
+        moved: boolean;
+        latest: number;
+    } | null>(null);
+    const lastPress = useRef(0);
+    const saved = hydrated && chosen === undefined ? readDockWidth() : null;
+    const width =
+        chosen !== undefined
+            ? chosen
+            : saved !== null
+              ? Math.min(saved, dockMax())
+              : null;
+
+    const current = () =>
+        width ?? dockRef.current?.getBoundingClientRect().width ?? 400;
+    const clamp = (value: number) =>
+        Math.min(dockMax(), Math.max(DOCK_MIN, value));
+
+    const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
+            return;
+        }
+
+        event.preventDefault();
+
+        // A second press in quick succession is a double-click: back to the default width. (Detected here
+        // because a pressed handle captures the pointer, which browsers handle differently for dblclick.)
+        if (event.timeStamp - lastPress.current < 400) {
+            lastPress.current = 0;
+            reset();
+
+            return;
+        }
+
+        lastPress.current = event.timeStamp;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const start = current();
+        drag.current = {
+            startX: event.clientX,
+            startWidth: start,
+            moved: false,
+            latest: start,
+        };
+    };
+
+    const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+        const state = drag.current;
+
+        if (!state) {
+            return;
+        }
+
+        // The dock sits on the right, so moving the edge left makes it wider.
+        const delta = state.startX - event.clientX;
+
+        if (!state.moved && Math.abs(delta) < 3) {
+            return;
+        }
+
+        if (!state.moved) {
+            state.moved = true;
+            setDragging(true);
+        }
+
+        state.latest = clamp(state.startWidth + delta);
+        setWidth(state.latest);
+    };
+
+    const endDrag = () => {
+        const state = drag.current;
+        drag.current = null;
+
+        if (state?.moved) {
+            setDragging(false);
+            writeDockWidth(state.latest);
+        }
+    };
+
+    const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const keys: Record<string, () => number> = {
+            ArrowLeft: () => current() + DOCK_STEP,
+            ArrowRight: () => current() - DOCK_STEP,
+            Home: () => DOCK_MIN,
+            End: () => dockMax(),
+        };
+        const next = keys[event.key];
+
+        if (next) {
+            event.preventDefault();
+            const value = clamp(next());
+            setWidth(value);
+            writeDockWidth(value);
+        }
+    };
+
+    const reset = () => {
+        setWidth(null);
+        writeDockWidth(null);
+    };
+
+    return (
+        <div
+            ref={dockRef}
+            className="relative hidden w-[400px] shrink-0 xl:flex 2xl:w-[440px]"
+            style={width !== null ? { width } : undefined}
+        >
+            <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize mentor panel"
+                aria-valuemin={DOCK_MIN}
+                aria-valuemax={760}
+                aria-valuenow={Math.round(width ?? 400)}
+                tabIndex={0}
+                title="Drag to resize · double-click to reset"
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                onKeyDown={onKeyDown}
+                className="group absolute inset-y-3 -left-2 z-10 flex w-2 cursor-col-resize touch-none items-center justify-center outline-none"
+            >
+                <span
+                    aria-hidden
+                    className={cn(
+                        'h-10 w-[3px] rounded-full bg-foreground/0 transition-colors duration-150 group-hover:bg-foreground/25 group-focus-visible:bg-ring',
+                        dragging &&
+                            'bg-foreground/40 group-hover:bg-foreground/40',
+                    )}
+                />
+            </div>
+            <aside
+                aria-label="Mentor"
+                className={cn(
+                    'flex w-full overflow-hidden rounded-2xl border border-border bg-background shadow-window',
+                    dragging && 'select-none',
+                )}
+            >
+                <MentorPanel variant="docked" />
+            </aside>
+            {/* While dragging, keep the cursor and stop the page from selecting text under the pointer. */}
+            {dragging ? (
+                <div
+                    aria-hidden
+                    className="fixed inset-0 z-50 cursor-col-resize"
+                />
+            ) : null}
+        </div>
+    );
+}
+
+function ContentHeader({
+    breadcrumbs,
+    trailing,
+    meta,
+    onOpenNav,
+}: {
+    breadcrumbs: NonNullable<AppLayoutProps['breadcrumbs']>;
+    trailing: ReactNode;
+    meta: ReactNode;
+    onOpenNav: () => void;
+}) {
+    const { currentUrl } = useCurrentUrl();
+    const mentor = useMentor();
+    const section = navItemFor(currentUrl.split('?')[0]);
+    const trail =
+        breadcrumbs.length > 0
+            ? breadcrumbs
+            : section
+              ? [{ title: section.label, href: section.href }]
+              : [];
+    const SectionIcon = section?.icon;
+
+    return (
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">
+            <button
+                type="button"
+                onClick={onOpenNav}
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+                aria-label="Open navigation"
+            >
+                <ListIcon className="size-5" />
+            </button>
+            <nav
+                aria-label="Breadcrumb"
+                className="flex min-w-0 flex-1 items-center gap-2 text-[14px]"
+            >
+                {SectionIcon ? (
+                    <SectionIcon className="hidden size-[18px] shrink-0 text-muted-foreground sm:block" />
+                ) : null}
+                {trail.map((item, i) => {
+                    const last = i === trail.length - 1;
+
+                    return (
+                        <Fragment key={i}>
+                            {i > 0 ? (
+                                <span
+                                    aria-hidden
+                                    className="hidden text-muted-foreground/50 sm:inline"
+                                >
+                                    /
+                                </span>
+                            ) : null}
+                            {last ? (
+                                <span
+                                    className="min-w-0 truncate font-medium text-foreground"
+                                    aria-current="page"
+                                >
+                                    {item.title}
+                                </span>
+                            ) : (
+                                <Link
+                                    href={item.href}
+                                    className="hidden shrink-0 truncate text-muted-foreground transition-colors hover:text-foreground sm:inline"
+                                >
+                                    {item.title}
+                                </Link>
+                            )}
+                        </Fragment>
+                    );
+                })}
+                {meta ? (
+                    <span className="hidden truncate text-muted-foreground md:inline">
+                        · {meta}
+                    </span>
+                ) : null}
+            </nav>
+            {trailing ? (
+                <div className="flex shrink-0 items-center gap-2">
+                    {trailing}
+                </div>
+            ) : null}
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <button
+                        type="button"
+                        onClick={mentor.toggle}
+                        aria-label={mentor.open ? 'Hide mentor' : 'Open mentor'}
+                        aria-pressed={mentor.open}
+                        className={cn(
+                            'relative inline-flex size-9 shrink-0 items-center justify-center rounded-lg border transition-colors',
+                            mentor.open
+                                ? 'border-transparent bg-muted text-foreground'
+                                : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
+                        )}
+                    >
+                        <ChatCircle
+                            className="size-[18px]"
+                            weight={mentor.open ? 'fill' : 'regular'}
+                        />
+                        {mentor.isTyping && !mentor.open ? (
+                            <span
+                                aria-hidden
+                                className="absolute top-1.5 right-1.5 size-1.5 animate-pulse rounded-full bg-brand"
+                            />
+                        ) : null}
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                    {mentor.open ? 'Hide mentor' : 'Ask your mentor'}
+                </TooltipContent>
+            </Tooltip>
+        </header>
+    );
+}
+
+function Shell({ children, breadcrumbs = [] }: AppLayoutProps) {
+    const mentor = useMentor();
+    const { setOpen: setMentorOpen } = mentor;
+    const docked = useMediaQuery(DOCKED_QUERY, true);
+    const page = usePage<{ sidebarOpen?: boolean }>();
+    const [expanded, setExpanded] = useState(page.props.sidebarOpen !== false);
+    const [navOpen, setNavOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [trailing, setTrailing] = useState<ReactNode>(null);
+    const [meta, setMeta] = useState<ReactNode>(null);
+
+    const toggleSidebar = () => {
+        const next = !expanded;
+        setExpanded(next);
+        document.cookie = `${SIDEBAR_COOKIE}=${next ? 'true' : 'false'};path=/;max-age=31536000;SameSite=Lax`;
+    };
+
+    // The overlay mentor steps aside when the student moves to another page (a partial reload keeps it).
+    const path = page.url.split('?')[0];
+    const lastPath = useRef(path);
+    useEffect(() => {
+        if (path !== lastPath.current) {
+            lastPath.current = path;
+
+            if (!docked) {
+                setMentorOpen(false);
+            }
+        }
+    }, [path, docked, setMentorOpen]);
+
+    return (
+        <HeaderSlotsContext.Provider value={{ setTrailing, setMeta }}>
+            <div className="flex h-svh max-h-svh min-h-0 w-full overflow-hidden bg-canvas">
+                <aside
+                    aria-label="Sidebar"
+                    className={cn(
+                        'hidden h-full shrink-0 transition-[width] duration-200 ease-out lg:block',
+                        expanded ? 'w-[248px]' : 'w-[60px]',
+                    )}
+                >
+                    <Sidebar
+                        collapsed={!expanded}
+                        onToggleCollapsed={toggleSidebar}
+                        onSearch={() => setSearchOpen(true)}
+                    />
+                </aside>
+
+                <div className="flex min-h-0 min-w-0 flex-1 gap-2 lg:py-2 lg:pr-2">
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background lg:rounded-2xl lg:border lg:border-border lg:shadow-window">
+                        <ContentHeader
+                            breadcrumbs={breadcrumbs}
+                            trailing={trailing}
+                            meta={meta}
+                            onOpenNav={() => setNavOpen(true)}
+                        />
+                        <main
+                            id="main"
+                            className="flex min-h-0 min-w-0 flex-1 scrollbar-thin flex-col overflow-y-auto overscroll-contain"
+                        >
+                            {children}
+                        </main>
+                    </div>
+
+                    {docked && mentor.open ? <MentorDock /> : null}
+                </div>
+            </div>
+
+            <Sheet open={!docked && mentor.open} onOpenChange={mentor.setOpen}>
+                <SheetContent
+                    side="right"
+                    showCloseButton={false}
+                    aria-describedby={undefined}
+                    className="gap-0 overflow-hidden border-0 p-0 data-[side=right]:w-full sm:rounded-2xl sm:border sm:border-border sm:data-[side=right]:inset-y-2 sm:data-[side=right]:right-2 sm:data-[side=right]:h-auto sm:data-[side=right]:max-w-[420px]"
+                >
+                    <SheetTitle className="sr-only">Mentor</SheetTitle>
+                    <MentorPanel variant="overlay" />
+                </SheetContent>
+            </Sheet>
+
+            <Sheet open={navOpen} onOpenChange={setNavOpen}>
+                <SheetContent
+                    side="left"
+                    showCloseButton={false}
+                    aria-describedby={undefined}
+                    className="w-[min(100vw,280px)] gap-0 border-r-0 bg-canvas p-0 data-[side=left]:w-[min(100vw,280px)]"
+                >
+                    <SheetTitle className="sr-only">Navigation</SheetTitle>
+                    <Sidebar
+                        collapsed={false}
+                        variant="drawer"
+                        onSearch={() => {
+                            setNavOpen(false);
+                            setSearchOpen(true);
+                        }}
+                        onNavigate={() => setNavOpen(false)}
+                    />
+                </SheetContent>
+            </Sheet>
+
+            <CommandMenu open={searchOpen} onOpenChange={setSearchOpen} />
+            <Toaster richColors closeButton position="top-right" />
+        </HeaderSlotsContext.Provider>
+    );
+}
+
+export default function AppLayout(props: AppLayoutProps) {
+    return (
+        <MentorProvider>
+            <Shell {...props} />
+        </MentorProvider>
+    );
 }

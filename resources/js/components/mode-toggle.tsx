@@ -1,8 +1,8 @@
 import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
+import { Button } from '@/components/ui/button';
 import type { Appearance } from '@/hooks/use-appearance';
 import { useAppearance } from '@/hooks/use-appearance';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 const modes: { value: Appearance; icon: Icon; label: string }[] = [
     { value: 'light', icon: SunIcon, label: 'Light' },

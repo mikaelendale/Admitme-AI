@@ -2,9 +2,18 @@
 
 use App\Http\Controllers\ActiveJobsController;
 use App\Http\Controllers\AdmitMeGeneralChatController;
+use App\Http\Controllers\AgentTasksController;
+use App\Http\Controllers\ApplicationsController;
+use App\Http\Controllers\ApprovalsController;
+use App\Http\Controllers\BrowserExtensionSettingsController;
+use App\Http\Controllers\CollegeKnowledgeController;
 use App\Http\Controllers\CollegeListCouncilRunController;
 use App\Http\Controllers\CollegeListsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DataExportsController;
+use App\Http\Controllers\DeadlinesController;
+use App\Http\Controllers\DocumentsController;
+use App\Http\Controllers\DocumentValuesController;
 use App\Http\Controllers\EssayRoastController;
 use App\Http\Controllers\EssayRunController;
 use App\Http\Controllers\EssayStrengthScoreController;
@@ -12,15 +21,19 @@ use App\Http\Controllers\EssaySuiteController;
 use App\Http\Controllers\GapFixController;
 use App\Http\Controllers\JobRetryController;
 use App\Http\Controllers\LegalController;
+use App\Http\Controllers\MentorTurnsController;
 use App\Http\Controllers\NotificationPreferencesController;
 use App\Http\Controllers\NotificationsController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileCompletionController;
 use App\Http\Controllers\ProfileOverviewController;
+use App\Http\Controllers\ProfileSetupController;
 use App\Http\Controllers\ProviderCallbackController;
 use App\Http\Controllers\ProviderRedirectController;
 use App\Http\Controllers\SupplementalEssayController;
+use App\Http\Controllers\TasksController;
 use App\Http\Controllers\WhyThisSchoolController;
+use App\Http\Controllers\WritingController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -40,10 +53,16 @@ Route::inertia('/', 'welcome', [
 ])->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // First-run onboarding (Phase 4 order): consent → situation → curriculum → interests → destinations →
+    // budget & aid → optional documents → review with targeted questions → (plan, only when billing applies).
     Route::get('onboarding', [OnboardingController::class, 'show'])->name('onboarding');
-    Route::post('onboarding/admissions-read', [OnboardingController::class, 'admissionsRead'])
-        ->name('onboarding.admissions-read');
-    Route::post('onboarding/step', [OnboardingController::class, 'saveStep'])->name('onboarding.step');
+    Route::post('onboarding/consent', [OnboardingController::class, 'consent'])->middleware('throttle:30,1')->name('onboarding.consent');
+    Route::post('onboarding/sections/{section}', [OnboardingController::class, 'saveSection'])
+        ->middleware('throttle:60,1')
+        ->whereAlpha('section')
+        ->name('onboarding.sections.save');
+    Route::post('onboarding/answers', [OnboardingController::class, 'saveAnswers'])->middleware('throttle:60,1')->name('onboarding.answers');
+    Route::post('onboarding/documents', [OnboardingController::class, 'uploadDocument'])->middleware('throttle:20,1')->name('onboarding.documents.store');
     Route::post('onboarding/checkout', [OnboardingController::class, 'checkout'])->name('onboarding.checkout');
     Route::post('onboarding/skip-billing', [OnboardingController::class, 'skipBilling'])->name('onboarding.skip-billing');
     Route::post('onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
@@ -51,6 +70,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(function () {
     Route::get('dashboard/chats', [DashboardController::class, 'chatsIndex'])->name('dashboard.chats.index');
+    Route::get('dashboard/chats/recent', [DashboardController::class, 'recentChats'])->name('dashboard.chats.recent');
+    Route::get('dashboard/chat/{conversation}/messages', [DashboardController::class, 'chatMessages'])
+        ->whereUuid('conversation')
+        ->name('dashboard.chat.messages');
     Route::get('dashboard/chat/{conversation}', [DashboardController::class, 'chat'])
         ->name('dashboard.chat.show')
         ->whereUuid('conversation');
@@ -62,6 +85,19 @@ Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(f
         ->name('college-lists.school.update');
     Route::delete('college-lists/{collegeListSchool}', [CollegeListsController::class, 'destroy'])
         ->name('college-lists.school.destroy');
+    Route::get('college-lists/{collegeListSchool}/knowledge', [CollegeKnowledgeController::class, 'show'])
+        ->name('college-lists.knowledge');
+    Route::post('college-lists/{collegeListSchool}/sources', [CollegeKnowledgeController::class, 'addSource'])
+        ->middleware('throttle:20,1')
+        ->name('college-lists.sources.store');
+    Route::post('college-lists/{collegeListSchool}/research', [CollegeKnowledgeController::class, 'ask'])
+        ->middleware('throttle:20,1')
+        ->name('college-lists.research');
+    Route::post('college-lists/suggestions/review', [CollegeListsController::class, 'reviewSuggestions'])
+        ->middleware('throttle:30,1')
+        ->name('college-lists.suggestions.review');
+    Route::get('college-lists/compare', [CollegeListsController::class, 'compare'])
+        ->name('college-lists.compare');
     Route::get('college-lists/{collegeListSchool}', [CollegeListsController::class, 'show'])
         ->name('college-lists.school');
     Route::post('college-lists/council-runs', [CollegeListCouncilRunController::class, 'store'])
@@ -107,6 +143,122 @@ Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(f
         ->whereUlid('run');
     Route::get('profile-overview', ProfileOverviewController::class)
         ->name('profile-overview');
+    Route::get('applications', [ApplicationsController::class, 'index'])
+        ->name('applications.index');
+    // The deadline tracker: every college's Early Action / Early Decision / Regular Decision dates (or rolling) as a calendar.
+    Route::get('deadlines', [DeadlinesController::class, 'index'])
+        ->name('deadlines.index');
+    Route::post('applications', [ApplicationsController::class, 'store'])
+        ->middleware('throttle:30,1')
+        ->name('applications.store');
+    Route::patch('applications/{application}', [ApplicationsController::class, 'update'])
+        ->middleware('throttle:60,1')
+        ->name('applications.update')
+        ->whereUlid('application');
+    Route::get('applications/{application}', [ApplicationsController::class, 'show'])
+        ->name('applications.show')
+        ->whereUlid('application');
+    Route::post('applications/{application}/checklist', [ApplicationsController::class, 'rebuildChecklist'])
+        ->middleware('throttle:30,1')
+        ->name('applications.checklist.rebuild')
+        ->whereUlid('application');
+    Route::post('applications/{application}/items', [ApplicationsController::class, 'storeItem'])
+        ->middleware('throttle:60,1')
+        ->name('applications.items.store')
+        ->whereUlid('application');
+    Route::patch('applications/{application}/items/{item}', [ApplicationsController::class, 'updateItem'])
+        ->middleware('throttle:120,1')
+        ->name('applications.items.update')
+        ->whereUlid('application')
+        ->whereUlid('item');
+    Route::get('tasks', TasksController::class)
+        ->name('tasks.index');
+    Route::get('settings/browser-extension', [BrowserExtensionSettingsController::class, 'show'])->name('browser-extension.show');
+    Route::post('settings/browser-extension/codes', [BrowserExtensionSettingsController::class, 'createCode'])->middleware('throttle:10,1')->name('browser-extension.codes.store');
+    Route::delete('settings/browser-extension/devices/{token}', [BrowserExtensionSettingsController::class, 'revoke'])->name('browser-extension.devices.revoke');
+    Route::delete('settings/browser-extension/control', [BrowserExtensionSettingsController::class, 'stopControl'])->name('browser-extension.control.stop');
+    Route::post('applications/{application}/browser-fill', [BrowserExtensionSettingsController::class, 'prepareFill'])->middleware('throttle:20,1')->name('applications.browser-fill')->whereUlid('application');
+    Route::get('exports', [DataExportsController::class, 'index'])->name('exports.index');
+    Route::post('exports', [DataExportsController::class, 'store'])->middleware('throttle:exports')->name('exports.store');
+    Route::get('exports/{export}/download', [DataExportsController::class, 'download'])
+        ->middleware(['signed', 'throttle:export-downloads'])
+        ->name('exports.download')
+        ->whereUlid('export');
+    Route::delete('exports/{export}', [DataExportsController::class, 'destroy'])->name('exports.destroy')->whereUlid('export');
+    Route::delete('documents/{document}', [DataExportsController::class, 'destroyDocument'])->middleware('throttle:30,1')->name('documents.destroy')->whereUlid('document');
+    Route::delete('writing/{piece}', [DataExportsController::class, 'destroyWriting'])->middleware('throttle:30,1')->name('writing.destroy')->whereUlid('piece');
+    Route::delete('knowledge-sources/{source}', [DataExportsController::class, 'destroySource'])->middleware('throttle:30,1')->name('knowledge-sources.destroy')->whereUlid('source');
+    Route::get('writing', [WritingController::class, 'index'])->name('writing.index');
+    Route::post('writing', [WritingController::class, 'store'])->middleware('throttle:30,1')->name('writing.store');
+    Route::get('writing/{piece}', [WritingController::class, 'show'])->name('writing.show')->whereUlid('piece');
+    Route::post('writing/{piece}/versions', [WritingController::class, 'saveVersion'])->middleware('throttle:120,1')->name('writing.versions.store')->whereUlid('piece');
+    Route::post('writing/{piece}/feedback', [WritingController::class, 'feedback'])->middleware(['throttle:20,1'])->name('writing.feedback')->whereUlid('piece');
+    Route::post('applications/{application}/items/{item}/writing', [WritingController::class, 'fromEssayStep'])
+        ->middleware('throttle:30,1')
+        ->name('applications.items.writing')
+        ->whereUlid('application')
+        ->whereUlid('item');
+    Route::post('applications/{application}/form-plan', [ApplicationsController::class, 'formPlan'])
+        ->middleware('throttle:10,1')
+        ->name('applications.form-plan')
+        ->whereUlid('application');
+    Route::post('agent-tasks/playbooks/{playbook}', [AgentTasksController::class, 'startPlaybook'])
+        ->middleware('throttle:10,1')
+        ->name('agent-tasks.playbooks.start');
+    Route::get('agent-tasks/{task}', [AgentTasksController::class, 'show'])
+        ->name('agent-tasks.show')
+        ->whereUlid('task');
+    foreach (['cancel', 'pause', 'resume', 'retry'] as $action) {
+        Route::post("agent-tasks/{task}/{$action}", [AgentTasksController::class, $action])
+            ->middleware('throttle:60,1')
+            ->name("agent-tasks.{$action}")
+            ->whereUlid('task');
+    }
+    Route::get('approvals', [ApprovalsController::class, 'index'])
+        ->name('approvals.index');
+    Route::get('approvals/{proposal}', [ApprovalsController::class, 'show'])
+        ->name('approvals.show')
+        ->whereUlid('proposal');
+    Route::post('approvals/{proposal}/decision', [ApprovalsController::class, 'decide'])
+        ->middleware('throttle:60,1')
+        ->name('approvals.decide')
+        ->whereUlid('proposal');
+
+    Route::get('documents', [DocumentsController::class, 'index'])
+        ->name('documents.index');
+    Route::get('documents/attachable', [DocumentsController::class, 'attachable'])
+        ->name('documents.attachable');
+    Route::post('documents', [DocumentsController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('documents.store');
+    Route::get('documents/{document}', [DocumentsController::class, 'show'])
+        ->name('documents.show')
+        ->whereUlid('document');
+    Route::post('documents/{document}/versions', [DocumentsController::class, 'storeVersion'])
+        ->middleware('throttle:20,1')
+        ->name('documents.versions.store')
+        ->whereUlid('document');
+    Route::get('documents/{document}/versions/{version}/file', [DocumentsController::class, 'file'])
+        ->name('documents.versions.file')
+        ->whereUlid(['document', 'version']);
+    Route::post('documents/{document}/versions/{version}/retry', [DocumentsController::class, 'retry'])
+        ->middleware('throttle:10,1')
+        ->name('documents.versions.retry')
+        ->whereUlid(['document', 'version']);
+    Route::post('document-values/{fact}/decision', [DocumentValuesController::class, 'decide'])
+        ->middleware('throttle:60,1')
+        ->name('documents.values.decide')
+        ->whereNumber('fact');
+
+    Route::get('profile-setup', [ProfileSetupController::class, 'show'])
+        ->name('profile-setup');
+    Route::post('profile-setup/answers', [ProfileSetupController::class, 'answers'])
+        ->middleware('throttle:60,1')
+        ->name('profile-setup.answers');
+    Route::post('profile-setup/{section}', [ProfileSetupController::class, 'save'])
+        ->middleware('throttle:60,1')
+        ->name('profile-setup.save')
+        ->whereAlpha('section');
     Route::post('profile-completion/dump', [ProfileCompletionController::class, 'storeDump'])
         ->name('profile-completion.dump');
     Route::post('profile-completion/resume', [ProfileCompletionController::class, 'storeResume'])
@@ -124,6 +276,17 @@ Route::middleware(['auth', 'onboarded', 'verified', 'platform.access'])->group(f
     Route::post('dashboard/chat', AdmitMeGeneralChatController::class)
         ->middleware('throttle:30,1')
         ->name('dashboard.chat');
+    // Background replies: start one, then read its parts in order (a refresh picks it up again).
+    Route::post('dashboard/chat/turns', [MentorTurnsController::class, 'store'])
+        ->middleware('throttle:30,1')
+        ->name('dashboard.chat.turns.store');
+    Route::get('dashboard/chat/turns/active', [MentorTurnsController::class, 'active'])
+        ->name('dashboard.chat.turns.active');
+    Route::get('dashboard/chat/turns/{mentorTurn}/events', [MentorTurnsController::class, 'events'])
+        ->middleware('throttle:600,1')
+        ->name('dashboard.chat.turns.events');
+    Route::post('dashboard/chat/turns/{mentorTurn}/cancel', [MentorTurnsController::class, 'cancel'])
+        ->name('dashboard.chat.turns.cancel');
     Route::get('notifications', [NotificationsController::class, 'index'])
         ->name('notifications.index');
     Route::post('notifications/read-all', [NotificationsController::class, 'markAllRead'])

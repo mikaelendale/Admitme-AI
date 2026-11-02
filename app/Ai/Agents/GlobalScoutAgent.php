@@ -2,30 +2,26 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Concerns\UsesConfiguredModel;
 use App\Ai\Tools\AllowedDomainHttpFetchTool;
 use App\Support\AdmissionsCycle;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Attributes\MaxSteps;
-use Laravel\Ai\Attributes\Model;
-use Laravel\Ai\Attributes\Provider;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Providers\Tools\WebSearch;
 use Stringable;
 
-#[Provider(Lab::OpenAI)]
-#[Model('gpt-5-nano')]
 #[MaxSteps(14)]
 #[Timeout(420)]
 class GlobalScoutAgent implements Agent, HasStructuredOutput, HasTools
 {
-    use Promptable;
+    use Promptable, UsesConfiguredModel;
 
     /**
      * Single OpenAI request timeout (web search + structured output can exceed 60s).

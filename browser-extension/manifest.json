@@ -1,0 +1,26 @@
+{
+    "manifest_version": 3,
+    "name": "AdmitMe assistant (local build)",
+    "version": "0.1.0",
+    "description": "Your AdmitMe mentor fills applications in one tab you choose. You log in; submitting or paying waits for your Allow.",
+    "permissions": ["storage", "sidePanel", "tabs", "scripting"],
+    "host_permissions": [
+        "http://127.0.0.1/*",
+        "http://localhost/*",
+        "https://*/*"
+    ],
+    "background": { "service_worker": "background.js", "type": "module" },
+    "side_panel": { "default_path": "sidepanel/index.html" },
+    "action": { "default_title": "AdmitMe assistant" },
+    "content_scripts": [
+        {
+            "matches": [
+                "http://127.0.0.1/*",
+                "http://localhost/*",
+                "https://*/*"
+            ],
+            "js": ["content.js"],
+            "run_at": "document_idle"
+        }
+    ]
+}

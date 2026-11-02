@@ -1,1688 +1,874 @@
 'use client';
 
-import { Form, Head, router, useForm, usePage, usePoll } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
-    CaretLeft,
-    CaretRight,
+    ArrowRight,
+    Check,
+    CheckCircle,
+    Circle,
     CircleNotch,
-    Upload,
-    Star,
-    Lightning,
-    ListChecksIcon,
-    RocketLaunch,
-    Lock,
-    ListBullets,
-    Wrench,
-    PencilLine,
+    FileArrowUp,
+    SignOut,
+    WarningCircle,
 } from '@phosphor-icons/react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
-import { PolarAngleAxis, PolarGrid, Radar, RadarChart } from 'recharts';
-import OnboardingController from '@/actions/App/Http/Controllers/OnboardingController';
-import AppLogoIcon from '@/components/app-logo-icon';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { useEffect, useRef, useState } from 'react';
+import type { DragEvent, FormEvent } from 'react';
 import {
-    ChartContainer,
-    ChartTooltip,
-    ChartTooltipContent,
-} from '@/components/ui/chart';
-import type { ChartConfig } from '@/components/ui/chart';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectValue,
-    SelectTrigger,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    CheckRow,
+    ErrorPill,
+    GuidedSectionForm,
+    HintPill,
+    OptionCards,
+    PrimaryButton,
+    StepFooter,
+} from '@/components/admitme/profile-fields';
+import type { GuidedField } from '@/components/admitme/profile-fields';
+import { LogoMark } from '@/components/brand/logo-mark';
+import { StepFigure } from '@/components/figures/figures';
+import ModeToggle from '@/components/mode-toggle';
 import { cn } from '@/lib/utils';
 
-const STEPS = [
-    {
-        id: 1,
-        title: 'Let’s see where your application actually stands.',
-        description:
-            'AdmitMe is your AI admissions mentor—guiding you from profile to acceptance. It shows what’s helping your application, what’s holding it back, and exactly what to do next.',
-        icon: RocketLaunch,
-    },
-    {
-        id: 2,
-        title: 'Show me your application.',
-        description:
-            'Paste everything you’ve done so far—grades, activities, awards, goals. Messy is fine. I’ll structure it.',
-        icon: Upload,
-    },
-    {
-        id: 3,
-        title: 'Admissions read in progress...',
-        description:
-            'We’re reviewing your profile the way an admissions officer would—flagging strengths, risks, and what could get you rejected.',
-        icon: Star,
-    },
-    {
-        id: 4,
-        title: 'Choose your AdmitMe plan',
-        description:
-            'Billing is optional during onboarding. Pick a plan now, or skip and finish setup first.',
-        icon: Lightning,
-    },
-    {
-        id: 5,
-        title: 'Your profile baseline is ready.',
-        description:
-            'This is where your journey begins. Track improvements, fix gaps, and build an application that stands out.',
-        icon: ListChecksIcon,
-    },
-];
-
-function countWords(text: string): number {
-    const t = text.trim();
-
-    if (!t) {
-        return 0;
-    }
-
-    return t.split(/\s+/).filter(Boolean).length;
-}
-
-type NoCapDimension = {
+type Step = {
     key: string;
-    label: string;
-    score: number;
-    verdict: string;
+    title: string;
+    intro: string;
+    completed: boolean;
+    fields: GuidedField[];
 };
 
-type NoCapInsightToken = {
-    text: string;
-    tone: 'positive' | 'caution' | 'neutral';
+type OnboardingDocument = {
+    id: string;
+    title: string;
+    name: string;
+    kindLabel: string;
+    status: string | null;
+    statusLabel: string | null;
+    failureReason: string | null;
+    pendingValues: number;
 };
 
-export type NoCapReport = {
+type Plan = {
+    plan: 'trial' | 'sprint' | 'pro';
+    cycle: 'monthly' | 'annual';
     headline: string;
-    dimensions: NoCapDimension[];
-    insight_tokens: NoCapInsightToken[];
-    takeaways: string[];
+    priceLine: string;
+    badge: string | null;
+    configured: boolean;
 };
 
-const NO_CAP_DIMENSION_ORDER = [
-    'academic_signal',
-    'activities_impact',
-    'positioning_spike',
-    'essay_readiness',
-    'narrative_coherence',
-] as const;
-
-function parseNoCapReport(answerJson: unknown): NoCapReport | null {
-    if (!answerJson || typeof answerJson !== 'object') {
-        return null;
-    }
-
-    const wrap = answerJson as Record<string, unknown>;
-    const raw = wrap.structured;
-
-    if (!raw || typeof raw !== 'object') {
-        return null;
-    }
-
-    const o = raw as Record<string, unknown>;
-
-    if (typeof o.headline !== 'string') {
-        return null;
-    }
-
-    if (
-        !Array.isArray(o.dimensions) ||
-        !Array.isArray(o.insight_tokens) ||
-        !Array.isArray(o.takeaways)
-    ) {
-        return null;
-    }
-
-    const dimensions: NoCapDimension[] = [];
-
-    for (const item of o.dimensions) {
-        if (!item || typeof item !== 'object') {
-            return null;
-        }
-
-        const d = item as Record<string, unknown>;
-
-        if (
-            typeof d.key !== 'string' ||
-            typeof d.label !== 'string' ||
-            typeof d.score !== 'number' ||
-            typeof d.verdict !== 'string'
-        ) {
-            return null;
-        }
-
-        dimensions.push({
-            key: d.key,
-            label: d.label,
-            score: d.score,
-            verdict: d.verdict,
-        });
-    }
-
-    const insight_tokens: NoCapInsightToken[] = [];
-
-    for (const item of o.insight_tokens) {
-        if (!item || typeof item !== 'object') {
-            return null;
-        }
-
-        const t = item as Record<string, unknown>;
-
-        if (typeof t.text !== 'string' || !isInsightTone(t.tone)) {
-            return null;
-        }
-
-        insight_tokens.push({ text: t.text, tone: t.tone });
-    }
-
-    const takeaways: string[] = [];
-
-    for (const line of o.takeaways) {
-        if (typeof line !== 'string') {
-            return null;
-        }
-
-        takeaways.push(line);
-    }
-
-    return {
-        headline: o.headline,
-        dimensions,
-        insight_tokens,
-        takeaways,
+type Props = {
+    steps: Step[];
+    current: string;
+    consent: {
+        done: boolean;
+        ageRange: string | null;
+        ageRanges: Record<string, string>;
     };
-}
-
-function isInsightTone(v: unknown): v is NoCapInsightToken['tone'] {
-    return v === 'positive' || v === 'caution' || v === 'neutral';
-}
-
-function orderNoCapDimensions(dimensions: NoCapDimension[]): NoCapDimension[] {
-    const order = new Map<string, number>(
-        NO_CAP_DIMENSION_ORDER.map((k, i) => [k, i]),
-    );
-
-    return [...dimensions].sort(
-        (a, b) => (order.get(a.key) ?? 99) - (order.get(b.key) ?? 99),
-    );
-}
-
-const noCapRadarConfig = {
-    score: {
-        label: 'Signal',
-        color: 'hsl(var(--chart-1))',
-    },
-} satisfies ChartConfig;
-
-function verdictChipClass(verdict: string): string {
-    switch (verdict) {
-        case 'strong':
-            return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200';
-        case 'mixed':
-            return 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100';
-        case 'weak':
-            return 'border-rose-500/40 bg-rose-500/10 text-rose-900 dark:text-rose-100';
-        default:
-            return 'border-muted-foreground/25 bg-muted/40 text-muted-foreground';
-    }
-}
-
-function insightToneClass(tone: NoCapInsightToken['tone']): string {
-    switch (tone) {
-        case 'positive':
-            return 'border-emerald-500/30 bg-emerald-500/5 text-emerald-900 dark:text-emerald-100';
-        case 'caution':
-            return 'border-amber-500/35 bg-amber-500/5 text-amber-950 dark:text-amber-100';
-        default:
-            return 'border-border bg-muted/30 text-foreground/80';
-    }
-}
-
-type AgeRangeValue =
-    | '13_14'
-    | '15_16'
-    | '17_18'
-    | '19plus'
-    | 'under_13_blocked'
-    | '';
-
-type OnboardingResponseRow = {
-    answer_text: string | null;
-    answer_json: unknown;
-};
-
-export type OnboardingPageProps = {
-    sessionUuid: string;
-    sessionId: number;
-    initialStep: number;
-    needsAgeGate: boolean;
-    checkoutVerified: boolean;
-    billingSkipped: boolean;
-    checkoutCancelled: boolean;
-    selectedBilling: {
-        plan: string | null;
-        billing_cycle: string;
+    revision: number;
+    readiness: Record<
+        string,
+        { label: string; ready: boolean; missing: string[] }
+    >;
+    missing: { task: string; label: string; keys: string[] }[];
+    missingFields: GuidedField[];
+    summary: {
+        section: string;
         label: string;
+        value: string | null;
+        unknown: boolean;
+    }[];
+    documents: OnboardingDocument[];
+    kinds: Record<string, string>;
+    maxUploadMb: number;
+    ocrAvailable: boolean;
+    billing: {
+        needed: boolean;
+        has_access: boolean;
+        checkout_verified: boolean;
+        cancelled: boolean;
+        trial_only: boolean;
+        plans: Plan[];
     };
-    profile: {
-        age_range: string | null;
-        is_age_13_or_older_confirmed: boolean;
-    };
-    responses: Record<string, OnboardingResponseRow>;
-    hasActiveSubscription: boolean;
-    maxProfileWords: number;
-    trial_only_mode?: boolean;
 };
 
-function isValidPersistedAgeRange(
-    value: string,
-): value is Exclude<AgeRangeValue, '' | 'under_13_blocked'> {
-    return ['13_14', '15_16', '17_18', '19plus'].includes(value);
+type Errors = Record<string, string | undefined>;
+
+const stepHref = (key: string) => `/onboarding?step=${key}`;
+
+function Progress({ steps, index }: { steps: Step[]; index: number }) {
+    return (
+        <div className="flex flex-1 items-center gap-1" aria-hidden>
+            {steps.map((step, i) => (
+                <span
+                    key={step.key}
+                    className={cn(
+                        'h-1 flex-1 rounded-full transition-colors duration-300',
+                        step.completed || i < index
+                            ? 'bg-foreground/75'
+                            : i === index
+                              ? 'bg-foreground/35'
+                              : 'bg-foreground/10',
+                    )}
+                />
+            ))}
+        </div>
+    );
 }
 
-export default function OnboardingPage({
-    initialStep,
-    needsAgeGate,
-    checkoutVerified,
-    billingSkipped,
-    checkoutCancelled,
-    selectedBilling,
-    profile,
-    responses,
-    hasActiveSubscription,
-    maxProfileWords,
-    trial_only_mode: trialOnlyMode = false,
-}: OnboardingPageProps) {
-    const { errors, csrf_token: csrfToken } = usePage<{
-        errors: Record<string, string | undefined>;
-        csrf_token?: string;
-    }>().props;
+function StepNav({
+    steps,
+    current,
+    locked,
+}: {
+    steps: Step[];
+    current: string;
+    locked: boolean;
+}) {
+    return (
+        <ol className="flex flex-col gap-0.5" aria-label="Setup steps">
+            {steps.map((step, i) => {
+                const active = step.key === current;
+                const disabled = locked && step.key !== 'consent';
+                const content = (
+                    <>
+                        <span
+                            className={cn(
+                                'nums flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium',
+                                step.completed
+                                    ? 'bg-foreground text-background'
+                                    : active
+                                      ? 'border border-foreground/40 text-foreground'
+                                      : 'border border-border text-muted-foreground',
+                            )}
+                        >
+                            {step.completed ? (
+                                <Check className="size-3" weight="bold" />
+                            ) : (
+                                i + 1
+                            )}
+                        </span>
+                        <span
+                            className={cn(
+                                'min-w-0 flex-1 truncate text-[14px]',
+                                active
+                                    ? 'font-medium text-foreground'
+                                    : 'text-foreground/75',
+                            )}
+                        >
+                            {step.title}
+                        </span>
+                    </>
+                );
+                const className = cn(
+                    'flex h-9 items-center gap-2.5 rounded-[10px] px-2.5 transition-colors',
+                    active
+                        ? 'bg-sidebar-accent'
+                        : !disabled && 'hover:bg-sidebar-accent/70',
+                    disabled && 'opacity-45',
+                );
 
-    const [step, setStep] = useState(initialStep);
-    const [profileText, setProfileText] = useState(
-        () => responses['profile.freeform_text']?.answer_text ?? '',
+                return (
+                    <li key={step.key}>
+                        {disabled ? (
+                            <span className={className} aria-disabled>
+                                {content}
+                            </span>
+                        ) : (
+                            <Link
+                                href={stepHref(step.key)}
+                                preserveScroll
+                                className={className}
+                                aria-current={active ? 'step' : undefined}
+                            >
+                                {content}
+                            </Link>
+                        )}
+                    </li>
+                );
+            })}
+        </ol>
     );
-    const [noCapReport, setNoCapReport] = useState<NoCapReport | null>(null);
-    const [noCapLoading, setNoCapLoading] = useState(false);
-    const [noCapError, setNoCapError] = useState<string | null>(null);
-    const [noCapFinished, setNoCapFinished] = useState(false);
-    const [noCapStreamKey, setNoCapStreamKey] = useState(0);
-    const [noCapLoadingMessage, setNoCapLoadingMessage] = useState<string>(
-        'Generating your read… results appear here as soon as they are ready.',
-    );
-    const [recurringPlanCycle, setRecurringPlanCycle] = useState<
-        'monthly' | 'annual'
-    >('monthly');
-    const [ageRange, setAgeRange] = useState<AgeRangeValue>(() => {
-        const ar = profile.age_range;
+}
 
-        return ar && isValidPersistedAgeRange(ar) ? ar : ('' as AgeRangeValue);
+function ConsentStep({
+    consent,
+    errors,
+}: {
+    consent: Props['consent'];
+    errors: Errors;
+}) {
+    const form = useForm({
+        age_range: consent.ageRange ?? '',
+        legal_accepted: consent.done,
     });
-    const [legalAccepted, setLegalAccepted] = useState(false);
-    const [profileClientError, setProfileClientError] = useState<string | null>(
-        null,
+    const submit = (e: FormEvent) => {
+        e.preventDefault();
+        form.post('/onboarding/consent', { preserveScroll: true });
+    };
+
+    return (
+        <form onSubmit={submit} className="space-y-6">
+            <section className="space-y-3">
+                <h2 className="mono-label">Your age range</h2>
+                <OptionCards
+                    name="Your age range"
+                    options={consent.ageRanges}
+                    value={form.data.age_range}
+                    onChange={(v) => form.setData('age_range', v)}
+                    columns={4}
+                />
+                <ErrorPill
+                    message={form.errors.age_range ?? errors.age_range}
+                />
+            </section>
+            <section className="space-y-3">
+                <h2 className="mono-label">Terms</h2>
+                <CheckRow
+                    checked={form.data.legal_accepted}
+                    onChange={(v) => form.setData('legal_accepted', v)}
+                    label={
+                        <>
+                            I am 13 or older and agree to the{' '}
+                            <a
+                                href="/legal/privacy"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline decoration-foreground/30 underline-offset-2 hover:decoration-foreground"
+                            >
+                                Privacy Policy
+                            </a>{' '}
+                            and{' '}
+                            <a
+                                href="/legal/terms"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline decoration-foreground/30 underline-offset-2 hover:decoration-foreground"
+                            >
+                                Terms of Service
+                            </a>
+                            .
+                        </>
+                    }
+                    description="Your profile, documents and chats stay private to you. You can export or delete them at any time."
+                />
+                <ErrorPill
+                    message={
+                        form.errors.legal_accepted ?? errors.legal_accepted
+                    }
+                />
+            </section>
+            <HintPill>
+                Next: a few short questions about where you are and what you
+                want. Every answer is saved as you go.
+            </HintPill>
+            <StepFooter>
+                <PrimaryButton
+                    processing={form.processing}
+                    disabled={!form.data.age_range || !form.data.legal_accepted}
+                >
+                    Agree and start
+                </PrimaryButton>
+            </StepFooter>
+        </form>
     );
-    const [stepProcessing, setStepProcessing] = useState(false);
+}
 
-    const checkoutForm = useForm({
-        plan: 'trial' as 'trial' | 'sprint' | 'pro',
-        billing_cycle: 'monthly' as 'monthly' | 'annual',
-    });
-    const [checkoutPlanBusy, setCheckoutPlanBusy] = useState<
-        'trial' | 'sprint' | 'pro' | null
-    >(null);
-    const checkoutBusy = checkoutPlanBusy !== null;
-
-    function submitCheckoutPlan(plan: 'trial' | 'sprint' | 'pro'): void {
-        checkoutForm.clearErrors();
-        checkoutForm.setData({
-            plan,
-            billing_cycle: plan === 'pro' ? recurringPlanCycle : 'monthly',
-        });
-        checkoutForm.post(OnboardingController.checkout.url(), {
-            preserveScroll: true,
-            onStart: () => setCheckoutPlanBusy(plan),
-            onFinish: () => setCheckoutPlanBusy(null),
-        });
+function statusTone(status: string | null): string {
+    if (status === 'failed') {
+        return 'bg-destructive/10 text-destructive';
     }
 
+    if (status === 'queued' || status === 'processing') {
+        return 'bg-muted text-muted-foreground';
+    }
+
+    return 'bg-success/12 text-success';
+}
+
+function DocumentsStep({
+    props,
+    back,
+    next,
+}: {
+    props: Props;
+    back: string | null;
+    next: string | null;
+}) {
+    const upload = useForm<{ kind: string; file: File | null }>({
+        kind: 'transcript',
+        file: null,
+    });
+    const finish = useForm({ expected_revision: props.revision });
+    const fileRef = useRef<HTMLInputElement>(null);
+    const [dragging, setDragging] = useState(false);
+    const reading = props.documents.some(
+        (d) => d.status === 'queued' || d.status === 'processing',
+    );
+
+    // Documents are read in the background; refresh their state until they settle.
     useEffect(() => {
-        setStep(initialStep);
-    }, [initialStep]);
-
-    const currentStep = STEPS[step - 1];
-
-    const billingComplete = checkoutVerified || hasActiveSubscription || billingSkipped;
-
-    const hasServerPlanSelection = Boolean(selectedBilling.plan);
-    const serverBillingCycle = selectedBilling.billing_cycle;
-    const trialSelected = selectedBilling.plan === 'trial';
-    const sprintSelected = selectedBilling.plan === 'sprint';
-    const proSelected =
-        selectedBilling.plan === 'pro' &&
-        recurringPlanCycle === serverBillingCycle;
-    const anyPlanCardMatches =
-        trialSelected || sprintSelected || proSelected;
-    const dimUnselectedPlans =
-        (hasServerPlanSelection || billingComplete) && anyPlanCardMatches;
-
-    useEffect(() => {
-        if (
-            selectedBilling.plan === 'pro' &&
-            (selectedBilling.billing_cycle === 'monthly' ||
-                selectedBilling.billing_cycle === 'annual')
-        ) {
-            setRecurringPlanCycle(selectedBilling.billing_cycle);
-        }
-    }, [selectedBilling.plan, selectedBilling.billing_cycle]);
-
-    useEffect(() => {
-        if (step !== 4 || billingComplete) {
-            return undefined;
+        if (!reading) {
+            return;
         }
 
-        const id = window.setInterval(() => {
-            if (document.visibilityState !== 'visible') {
-                return;
-            }
-
-            router.reload({
-                only: [
-                    'checkoutVerified',
-                    'hasActiveSubscription',
-                    'responses',
-                    'selectedBilling',
-                    'initialStep',
-                ],
-            });
-        }, 3000);
+        const id = window.setInterval(
+            () =>
+                router.reload({ only: ['documents', 'summary', 'readiness'] }),
+            3000,
+        );
 
         return () => window.clearInterval(id);
-    }, [step, billingComplete]);
+    }, [reading]);
 
-    const reportRow = responses['report.no_cap_markdown'];
-    const reportHydrateKey = JSON.stringify([
-        reportRow?.answer_text ?? '',
-        reportRow?.answer_json ?? null,
-    ]);
-    const serverNoCapParsed = useMemo(
-        () => parseNoCapReport(reportRow?.answer_json),
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by serialized row
-        [reportHydrateKey],
-    );
-
-    const noCapLegacyOnly =
-        Boolean(reportRow?.answer_text?.trim()) && !serverNoCapParsed;
-
-    const { start: startStep3ResponsesPoll, stop: stopStep3ResponsesPoll } =
-        usePoll(
-            1000,
-            { only: ['responses'] },
-            { autoStart: false },
-        );
-
-    useEffect(() => {
-        const shouldPollStep3Responses =
-            step === 3 &&
-            !serverNoCapParsed &&
-            !noCapReport &&
-            !noCapLegacyOnly &&
-            noCapError === null;
-
-        if (!shouldPollStep3Responses) {
-            stopStep3ResponsesPoll();
-
-            return undefined;
-        }
-
-        startStep3ResponsesPoll();
-
-        return () => stopStep3ResponsesPoll();
-    }, [
-        step,
-        serverNoCapParsed,
-        noCapReport,
-        noCapLegacyOnly,
-        noCapError,
-        startStep3ResponsesPoll,
-        stopStep3ResponsesPoll,
-    ]);
-
-    const profileWordCount = countWords(profileText);
-    const profileOverWordLimit = profileWordCount > maxProfileWords;
-
-    useEffect(() => {
-        if (step !== 3) {
-            return undefined;
-        }
-
-        if (serverNoCapParsed) {
-            setNoCapReport(serverNoCapParsed);
-            setNoCapFinished(true);
-            setNoCapLoading(false);
-            setNoCapError(null);
-
-            return undefined;
-        }
-
-        if (noCapLegacyOnly) {
-            setNoCapReport(null);
-            setNoCapFinished(true);
-            setNoCapLoading(false);
-            setNoCapError(null);
-
-            return undefined;
-        }
-
-        let cancelled = false;
-        let timeoutId: number | undefined;
-        let message15sId: number | undefined;
-        let message30sId: number | undefined;
-
-        setNoCapReport(null);
-        setNoCapError(null);
-        setNoCapFinished(false);
-        setNoCapLoading(true);
-        setNoCapLoadingMessage(
-            'Generating your read… results appear here as soon as they are ready.',
-        );
-
-        message15sId = window.setTimeout(() => {
-            if (!cancelled) {
-                setNoCapLoadingMessage(
-                    'Hang tight — analyzing your profile...',
-                );
-            }
-        }, 15000);
-
-        message30sId = window.setTimeout(() => {
-            if (!cancelled) {
-                setNoCapLoadingMessage(
-                    'Almost there — this usually takes under a minute...',
-                );
-            }
-        }, 30000);
-
-        timeoutId = window.setTimeout(() => {
-            if (!cancelled) {
-                setNoCapError(
-                    'This is taking longer than usual. Your analysis is still running — refresh in a moment or retry now.',
-                );
-                setNoCapFinished(true);
-                setNoCapLoading(false);
-            }
-        }, 60000);
-
-        void (async () => {
-            try {
-                if (!csrfToken) {
-                    throw new Error('Missing session token. Refresh the page.');
-                }
-
-                const res = await fetch(
-                    OnboardingController.admissionsRead.url(),
-                    {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: {
-                            Accept: 'application/json',
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'X-CSRF-TOKEN': csrfToken,
-                        },
-                        body: '{}',
-                    },
-                );
-
-                const data = (await res.json()) as {
-                    message?: string;
-                    report?: unknown;
-                };
-
-                if (!res.ok) {
-                    throw new Error('SERVER_ERROR');
-                }
-
-                const fromApi = parseNoCapReport({ structured: data.report });
-
-                if (!fromApi) {
-                    throw new Error('SERVER_ERROR');
-                }
-
-                if (!cancelled) {
-                    if (timeoutId !== undefined) {
-                        window.clearTimeout(timeoutId);
-                    }
-                    if (message15sId !== undefined) {
-                        window.clearTimeout(message15sId);
-                    }
-                    if (message30sId !== undefined) {
-                        window.clearTimeout(message30sId);
-                    }
-                    setNoCapReport(fromApi);
-                    setNoCapFinished(true);
-                    setNoCapLoading(false);
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            router.reload({
-                                only: ['responses'],
-                            });
-                        });
-                    });
-                }
-            } catch {
-                if (!cancelled) {
-                    if (timeoutId !== undefined) {
-                        window.clearTimeout(timeoutId);
-                    }
-                    if (message15sId !== undefined) {
-                        window.clearTimeout(message15sId);
-                    }
-                    if (message30sId !== undefined) {
-                        window.clearTimeout(message30sId);
-                    }
-                    setNoCapError('Server error. Please try again.');
-                    setNoCapFinished(true);
-                    setNoCapLoading(false);
-                }
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-            if (timeoutId !== undefined) {
-                window.clearTimeout(timeoutId);
-            }
-            if (message15sId !== undefined) {
-                window.clearTimeout(message15sId);
-            }
-            if (message30sId !== undefined) {
-                window.clearTimeout(message30sId);
-            }
-        };
-    }, [
-        step,
-        reportHydrateKey,
-        noCapStreamKey,
-        csrfToken,
-        serverNoCapParsed,
-        noCapLegacyOnly,
-    ]);
-
-    const postSaveStep = (data: Record<string, string | number | boolean>) => {
-        setStepProcessing(true);
-        router.post(OnboardingController.saveStep.url(), data, {
+    const send = (file: File) => {
+        upload.transform((data) => ({ ...data, file }));
+        upload.post('/onboarding/documents', {
+            forceFormData: true,
             preserveScroll: true,
-            onFinish: () => setStepProcessing(false),
+            onSuccess: () => upload.reset('file'),
         });
     };
 
-    const handleNext = () => {
-        if (step === 1) {
-            postSaveStep({ step: 1 });
+    const onDrop = (e: DragEvent<HTMLLabelElement>) => {
+        e.preventDefault();
+        setDragging(false);
+        const file = e.dataTransfer.files?.[0];
 
-            return;
-        }
-
-        if (step === 2) {
-            const trimmed = profileText.trim();
-
-            if (!trimmed) {
-                setProfileClientError(
-                    'Please paste or type your profile first.',
-                );
-
-                return;
-            }
-
-            if (profileOverWordLimit) {
-                setProfileClientError(
-                    `Please stay within ${maxProfileWords.toLocaleString()} words.`,
-                );
-
-                return;
-            }
-
-            setProfileClientError(null);
-            postSaveStep({ step: 2, profile_text: trimmed });
-
-            return;
-        }
-
-        if (step === 3) {
-            postSaveStep({ step: 3, report_acknowledged: true });
-
-            return;
-        }
-
-        if (step === 4) {
-            postSaveStep({ step: 4 });
+        if (file) {
+            send(file);
         }
     };
 
-    const handleBack = () => {
-        if (step > 1) {
-            const targetStep = step - 1;
-            setStep(targetStep);
-            
-            const stepKeyMap: Record<number, number> = {
-                1: 1,
-                2: 2,
-                3: 3,
-                4: 4,
-                5: 5,
-            };
-            const serverStepKey = stepKeyMap[targetStep];
-            if (serverStepKey !== undefined) {
-                router.post(
-                    OnboardingController.saveStep.url(),
-                    { step: serverStepKey - 1 },
-                    {
-                        preserveScroll: true,
-                        only: [],
-                    },
-                );
-            }
-        }
-    };
+    const quickKinds = Object.fromEntries(
+        Object.entries(props.kinds).filter(([k]) =>
+            ['transcript', 'test_score_report', 'resume', 'other'].includes(k),
+        ),
+    );
 
-    const ageSubmitReady = isValidPersistedAgeRange(ageRange) && legalAccepted;
+    return (
+        <div className="space-y-6">
+            <section className="space-y-3">
+                <h2 className="mono-label">What are you uploading?</h2>
+                <OptionCards
+                    name="Document type"
+                    options={quickKinds}
+                    value={upload.data.kind}
+                    onChange={(v) => upload.setData('kind', v || 'other')}
+                />
+            </section>
+
+            <label
+                onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                className={cn(
+                    'flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed px-6 py-8 text-center transition-colors',
+                    dragging
+                        ? 'border-foreground/40 bg-muted'
+                        : 'border-foreground/15 bg-muted/40 hover:bg-muted/70',
+                )}
+            >
+                {upload.processing ? (
+                    <CircleNotch className="size-6 animate-spin text-muted-foreground" />
+                ) : (
+                    <FileArrowUp className="size-6 text-muted-foreground" />
+                )}
+                <span className="text-[14px] font-medium text-foreground">
+                    {upload.processing
+                        ? 'Uploading…'
+                        : 'Drop a file here or choose one'}
+                </span>
+                <span className="font-mono text-[11px] tracking-wide text-muted-foreground uppercase">
+                    PDF · DOCX · TXT{props.ocrAvailable ? ' · PNG · JPG' : ''} ·
+                    up to {props.maxUploadMb} MB
+                </span>
+                <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.docx,.txt,.png,.jpg,.jpeg"
+                    className="sr-only"
+                    onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+
+                        if (file) {
+                            send(file);
+                        }
+                    }}
+                />
+            </label>
+            <ErrorPill message={upload.errors.file ?? upload.errors.kind} />
+            {!props.ocrAvailable ? (
+                <HintPill>
+                    Photos and scanned PDFs can&apos;t be read yet. Upload a PDF
+                    with selectable text, or type the values in the earlier
+                    steps.
+                </HintPill>
+            ) : null}
+
+            {props.documents.length > 0 ? (
+                <ul className="divide-y divide-border/70 rounded-2xl border border-border/80">
+                    {props.documents.map((doc) => (
+                        <li
+                            key={doc.id}
+                            className="flex items-center gap-3 px-4 py-3"
+                        >
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[14px] font-medium text-foreground">
+                                    {doc.name}
+                                </span>
+                                <span className="block truncate text-[12.5px] text-muted-foreground">
+                                    {doc.kindLabel}
+                                    {doc.status === 'failed' &&
+                                    doc.failureReason
+                                        ? ` · ${doc.failureReason}`
+                                        : ''}
+                                    {doc.pendingValues > 0
+                                        ? ` · ${doc.pendingValues} value${doc.pendingValues === 1 ? '' : 's'} to check after setup`
+                                        : ''}
+                                </span>
+                            </span>
+                            <span
+                                className={cn(
+                                    'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium',
+                                    statusTone(doc.status),
+                                )}
+                            >
+                                {doc.status === 'queued' ||
+                                doc.status === 'processing' ? (
+                                    <CircleNotch className="size-3 animate-spin" />
+                                ) : doc.status === 'failed' ? (
+                                    <WarningCircle
+                                        className="size-3"
+                                        weight="fill"
+                                    />
+                                ) : (
+                                    <Check className="size-3" weight="bold" />
+                                )}
+                                {doc.statusLabel ?? 'Saved'}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
+
+            <HintPill>
+                Values read from a document are suggestions. You check each one
+                on the Documents page before it reaches your profile.
+            </HintPill>
+
+            <StepFooter backHref={back ? stepHref(back) : null}>
+                {next ? (
+                    <Link
+                        href={stepHref(next)}
+                        className="inline-flex h-10 items-center rounded-full px-4 text-[13.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                        Skip for now
+                    </Link>
+                ) : null}
+                <PrimaryButton
+                    processing={finish.processing}
+                    type="button"
+                    onClick={() =>
+                        finish.post('/onboarding/sections/documents', {
+                            preserveScroll: true,
+                        })
+                    }
+                >
+                    Continue
+                </PrimaryButton>
+            </StepFooter>
+        </div>
+    );
+}
+
+function ReviewStep({ props, back }: { props: Props; back: string | null }) {
+    const complete = useForm({});
+    const sectionTitles = Object.fromEntries(
+        props.steps.map((s) => [s.key, s.title]),
+    );
+    const grouped = props.summary.reduce<Record<string, Props['summary']>>(
+        (acc, row) => {
+            (acc[row.section] ??= []).push(row);
+
+            return acc;
+        },
+        {},
+    );
+
+    return (
+        <div className="space-y-7">
+            <section className="space-y-3">
+                <h2 className="mono-label">Ready for</h2>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                    {Object.entries(props.readiness).map(([key, task]) => (
+                        <li
+                            key={key}
+                            className={cn(
+                                'rounded-xl px-3.5 py-3',
+                                task.ready ? 'bg-success/[0.08]' : 'bg-muted',
+                            )}
+                        >
+                            <p className="flex items-center gap-2 text-[14px] font-medium text-foreground">
+                                {task.ready ? (
+                                    <CheckCircle
+                                        className="size-4 text-success"
+                                        weight="fill"
+                                    />
+                                ) : (
+                                    <Circle className="size-4 text-muted-foreground" />
+                                )}
+                                {task.label}
+                            </p>
+                            <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
+                                {task.ready
+                                    ? 'You have answered everything this needs.'
+                                    : `Still open: ${task.missing.join(', ')}.`}
+                            </p>
+                        </li>
+                    ))}
+                </ul>
+            </section>
+
+            {props.missingFields.length > 0 ? (
+                <section className="space-y-3">
+                    <h2 className="mono-label">A few questions still open</h2>
+                    <HintPill>
+                        {props.missing
+                            .map((m) => `${m.task}: ${m.label.toLowerCase()}`)
+                            .join(' · ')}
+                        . Answer what you can — &quot;don&apos;t know&quot;
+                        counts.
+                    </HintPill>
+                    <div className="rounded-2xl border border-border/80 p-4 sm:p-5">
+                        <GuidedSectionForm
+                            key={props.revision}
+                            fields={props.missingFields}
+                            revision={props.revision}
+                            action="/onboarding/answers"
+                            submitLabel="Save answers"
+                            extraData={{
+                                keys: props.missingFields.map((f) => f.key),
+                            }}
+                        />
+                    </div>
+                </section>
+            ) : null}
+
+            <section className="space-y-3">
+                <h2 className="mono-label">Your answers</h2>
+                <div className="divide-y divide-border/70 rounded-2xl border border-border/80">
+                    {Object.entries(grouped).map(([section, rows]) => (
+                        <div key={section} className="px-4 py-3.5">
+                            <div className="mb-2 flex items-center justify-between">
+                                <p className="text-[13.5px] font-medium text-foreground">
+                                    {sectionTitles[section] ?? section}
+                                </p>
+                                <Link
+                                    href={stepHref(section)}
+                                    className="text-[12.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                                >
+                                    Edit
+                                </Link>
+                            </div>
+                            <dl className="grid gap-x-4 gap-y-1.5 text-[13px] sm:grid-cols-2">
+                                {rows.map((row) => (
+                                    <div
+                                        key={row.label}
+                                        className="flex min-w-0 justify-between gap-3 sm:block"
+                                    >
+                                        <dt className="truncate text-muted-foreground">
+                                            {row.label}
+                                        </dt>
+                                        <dd
+                                            className={cn(
+                                                'truncate',
+                                                row.value
+                                                    ? 'text-foreground'
+                                                    : 'text-muted-foreground/70',
+                                            )}
+                                        >
+                                            {row.unknown
+                                                ? "Don't know"
+                                                : (row.value ?? '—')}
+                                        </dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <StepFooter backHref={back ? stepHref(back) : null}>
+                {props.billing.needed ? (
+                    <Link
+                        href={stepHref('plan')}
+                        className="inline-flex h-10 items-center gap-2 rounded-full bg-primary px-5 text-[14px] font-medium text-primary-foreground shadow-raised"
+                    >
+                        Continue
+                        <ArrowRight className="size-4" />
+                    </Link>
+                ) : (
+                    <PrimaryButton
+                        processing={complete.processing}
+                        type="button"
+                        onClick={() => complete.post('/onboarding/complete')}
+                    >
+                        Finish setup
+                    </PrimaryButton>
+                )}
+            </StepFooter>
+        </div>
+    );
+}
+
+function PlanStep({
+    props,
+    back,
+    errors,
+}: {
+    props: Props;
+    back: string | null;
+    errors: Errors;
+}) {
+    const configured = props.billing.plans.filter((p) => p.configured);
+    const [choice, setChoice] = useState(
+        configured[0] ? `${configured[0].plan}:${configured[0].cycle}` : '',
+    );
+    const checkout = useForm({ plan: '', billing_cycle: 'monthly' });
+    const skip = useForm({});
+    const complete = useForm({});
+    const done = props.billing.checkout_verified || props.billing.has_access;
+
+    if (done) {
+        return (
+            <div className="space-y-6">
+                <p className="flex items-center gap-2 rounded-xl bg-success/[0.08] px-4 py-3 text-[14px] text-foreground">
+                    <CheckCircle
+                        className="size-5 text-success"
+                        weight="fill"
+                    />
+                    Your access is active.
+                </p>
+                <StepFooter backHref={back ? stepHref(back) : null}>
+                    <PrimaryButton
+                        processing={complete.processing}
+                        type="button"
+                        onClick={() => complete.post('/onboarding/complete')}
+                    >
+                        Finish setup
+                    </PrimaryButton>
+                </StepFooter>
+            </div>
+        );
+    }
+
+    const options = Object.fromEntries(
+        configured.map((p) => [
+            `${p.plan}:${p.cycle}`,
+            `${p.headline} — ${p.priceLine}${p.badge ? ` · ${p.badge}` : ''}`,
+        ]),
+    );
+
+    return (
+        <div className="space-y-6">
+            {props.billing.cancelled ? (
+                <HintPill>
+                    Checkout was cancelled. Nothing was charged.
+                </HintPill>
+            ) : null}
+            {props.billing.trial_only ? (
+                <HintPill>
+                    Sprint and Pro are paused for now; the $1 trial includes
+                    full access.
+                </HintPill>
+            ) : null}
+            {configured.length > 0 ? (
+                <section className="space-y-3">
+                    <h2 className="mono-label">Choose a plan</h2>
+                    <OptionCards
+                        name="Plan"
+                        options={options}
+                        value={choice}
+                        onChange={(v) => setChoice(v)}
+                        columns={1}
+                    />
+                </section>
+            ) : (
+                <HintPill>
+                    No plans are set up for checkout here yet. You can finish
+                    setup and choose a plan later in Settings → Billing.
+                </HintPill>
+            )}
+            <ErrorPill
+                message={
+                    checkout.errors.plan ??
+                    errors.plan ??
+                    errors.billing ??
+                    errors.onboarding
+                }
+            />
+            <StepFooter backHref={back ? stepHref(back) : null}>
+                <button
+                    type="button"
+                    disabled={skip.processing}
+                    onClick={() => skip.post('/onboarding/skip-billing')}
+                    className="inline-flex h-10 items-center rounded-full px-4 text-[13.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                >
+                    Skip for now
+                </button>
+                {configured.length > 0 ? (
+                    <PrimaryButton
+                        processing={checkout.processing}
+                        type="button"
+                        disabled={!choice}
+                        onClick={() => {
+                            const [plan, cycle] = choice.split(':');
+                            checkout.transform(() => ({
+                                plan,
+                                billing_cycle: cycle,
+                            }));
+                            checkout.post('/onboarding/checkout');
+                        }}
+                    >
+                        Continue to checkout
+                    </PrimaryButton>
+                ) : null}
+            </StepFooter>
+        </div>
+    );
+}
+
+export default function OnboardingPage(props: Props) {
+    const { errors } = usePage<{ errors: Errors }>().props;
+    const steps = props.steps;
+    const index = Math.max(
+        0,
+        steps.findIndex((s) => s.key === props.current),
+    );
+    const step = steps[index] ?? steps[0];
+    const back = index > 0 ? steps[index - 1].key : null;
+    const next = index < steps.length - 1 ? steps[index + 1].key : null;
+    const locked = !props.consent.done;
 
     return (
         <>
-            <Head title="Onboarding" />
-            {checkoutCancelled ? (
-                <p
-                    className="bg-destructive/10 px-4 py-2 text-center text-sm text-destructive"
-                    role="status"
-                >
-                    Checkout was cancelled. Choose a plan when you are ready.
-                </p>
-            ) : null}
-            <Dialog open={needsAgeGate} onOpenChange={() => {}}>
-                <DialogContent
-                    showCloseButton={false}
-                    onEscapeKeyDown={(event) => event.preventDefault()}
-                    onPointerDownOutside={(event) => event.preventDefault()}
-                    className="sm:max-w-lg"
-                >
-                    <DialogHeader>
-                        <DialogTitle>Age confirmation required</DialogTitle>
-                        <DialogDescription>
-                            AdmitMe is not available for users under 13. Please
-                            confirm your age before continuing onboarding. (Date
-                            of birth for strict verification will be added
-                            later.)
-                        </DialogDescription>
-                    </DialogHeader>
+            <Head title="Set up your profile" />
+            <div className="flex h-svh min-h-0 bg-canvas">
+                <aside className="hidden w-[264px] shrink-0 flex-col px-3 py-3 lg:flex">
+                    <div className="mb-5 flex items-center gap-2.5 px-1 py-1">
+                        <span className="flex size-7 items-center justify-center rounded-[8px] bg-foreground text-background">
+                            <LogoMark className="size-3.5" />
+                        </span>
+                        <span className="text-[15px] font-semibold tracking-tight text-foreground">
+                            AdmitMe
+                        </span>
+                    </div>
+                    <p className="mb-1.5 px-2.5 text-[12.5px] text-muted-foreground">
+                        Set up your profile
+                    </p>
+                    <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto">
+                        <StepNav
+                            steps={steps}
+                            current={step.key}
+                            locked={locked}
+                        />
+                    </div>
+                    <div className="mt-3 rounded-xl border border-border bg-background px-3 py-2.5 text-[12px] leading-snug text-muted-foreground shadow-card">
+                        Saved after every step. Stop any time — you&apos;ll pick
+                        up where you left off.
+                    </div>
+                </aside>
 
-                    <Form
-                        action={OnboardingController.saveStep.url()}
-                        method="post"
-                        options={{ preserveScroll: true }}
-                        className="contents"
-                    >
-                        {({ processing }) => (
-                            <>
-                                <input type="hidden" name="step" value="0" />
-                                <input
-                                    type="hidden"
-                                    name="age_range"
-                                    value={
-                                        isValidPersistedAgeRange(ageRange)
-                                            ? ageRange
-                                            : ''
-                                    }
+                <main className="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background lg:rounded-2xl lg:border lg:border-border lg:shadow-window">
+                        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 sm:px-6">
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-foreground text-background lg:hidden">
+                                <LogoMark className="size-3.5" />
+                            </span>
+                            <span className="nums shrink-0 text-[13px] text-muted-foreground">
+                                Step {index + 1} of {steps.length}
+                            </span>
+                            <Progress steps={steps} index={index} />
+                            <ModeToggle className="size-8" />
+                            <Link
+                                href="/logout"
+                                method="post"
+                                as="button"
+                                className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label="Log out"
+                            >
+                                <SignOut className="size-4" />
+                            </Link>
+                        </header>
+
+                        <div className="min-h-0 flex-1 scrollbar-thin overflow-y-auto">
+                            <div
+                                className="mx-auto w-full max-w-[640px] animate-rise px-5 py-8 sm:px-8 sm:py-12"
+                                key={step.key}
+                            >
+                                <StepFigure
+                                    step={step.key}
+                                    className="mb-6 h-24 w-auto"
                                 />
-                                {legalAccepted ? (
-                                    <input
-                                        type="hidden"
-                                        name="legal_accepted"
-                                        value="1"
+                                <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-foreground sm:text-[28px]">
+                                    {step.key === 'consent'
+                                        ? 'Welcome to AdmitMe'
+                                        : step.title}
+                                </h1>
+                                <p className="mt-2 max-w-xl text-[14.5px] leading-relaxed text-muted-foreground">
+                                    {step.intro}
+                                </p>
+
+                                <div className="mt-8">
+                                    {step.key === 'consent' ? (
+                                        <ConsentStep
+                                            consent={props.consent}
+                                            errors={errors}
+                                        />
+                                    ) : step.key === 'documents' ? (
+                                        <DocumentsStep
+                                            props={props}
+                                            back={back}
+                                            next={next}
+                                        />
+                                    ) : step.key === 'review' ? (
+                                        <ReviewStep props={props} back={back} />
+                                    ) : step.key === 'plan' ? (
+                                        <PlanStep
+                                            props={props}
+                                            back={back}
+                                            errors={errors}
+                                        />
+                                    ) : (
+                                        <GuidedSectionForm
+                                            key={`${step.key}:${props.revision}`}
+                                            fields={step.fields}
+                                            revision={props.revision}
+                                            action={`/onboarding/sections/${step.key}`}
+                                            backHref={
+                                                back ? stepHref(back) : null
+                                            }
+                                            skipHref={
+                                                next ? stepHref(next) : null
+                                            }
+                                        />
+                                    )}
+                                </div>
+                                {errors.onboarding && step.key !== 'plan' ? (
+                                    <ErrorPill
+                                        className="mt-4"
+                                        message={errors.onboarding}
                                     />
                                 ) : null}
-
-                                <div className="space-y-4">
-                                    <div className="grid gap-2">
-                                        <label className="block text-sm font-medium text-foreground">
-                                            Select your age range
-                                        </label>
-                                        <Select
-                                            value={
-                                                ageRange === ''
-                                                    ? undefined
-                                                    : ageRange
-                                            }
-                                            onValueChange={(value) =>
-                                                setAgeRange(
-                                                    value as AgeRangeValue,
-                                                )
-                                            }
-                                        >
-                                            <SelectTrigger className="w-full">
-                                                <SelectValue placeholder="Choose age range" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="13_14">
-                                                    13–14
-                                                </SelectItem>
-                                                <SelectItem value="15_16">
-                                                    15–16
-                                                </SelectItem>
-                                                <SelectItem value="17_18">
-                                                    17–18
-                                                </SelectItem>
-                                                <SelectItem value="19plus">
-                                                    19 or older
-                                                </SelectItem>
-                                                <SelectItem value="under_13_blocked">
-                                                    Under 13
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <InputError
-                                            className="text-xs"
-                                            message={errors.age_range}
-                                        />
-                                    </div>
-
-                                    {ageRange === 'under_13_blocked' && (
-                                        <p className="text-xs text-destructive">
-                                            You must be at least 13 years old to
-                                            use AdmitMe.
-                                        </p>
-                                    )}
-
-                                    <div className="grid gap-2">
-                                        <label className="flex items-start gap-2 text-sm text-muted-foreground">
-                                            <input
-                                                type="checkbox"
-                                                className="mt-0.5 h-4 w-4 rounded border-input"
-                                                checked={legalAccepted}
-                                                onChange={(event) =>
-                                                    setLegalAccepted(
-                                                        event.target.checked,
-                                                    )
-                                                }
-                                            />
-                                            <span>
-                                                I confirm I meet the age
-                                                requirement above and agree to
-                                                the{' '}
-                                                <a
-                                                    href="/privacy-policy"
-                                                    className="underline underline-offset-4 hover:text-foreground"
-                                                >
-                                                    Privacy Policy
-                                                </a>{' '}
-                                                and{' '}
-                                                <a
-                                                    href="/terms"
-                                                    className="underline underline-offset-4 hover:text-foreground"
-                                                >
-                                                    Terms of Service
-                                                </a>
-                                                .
-                                            </span>
-                                        </label>
-                                        <InputError
-                                            className="text-xs"
-                                            message={errors.legal_accepted}
-                                        />
-                                    </div>
-                                </div>
-
-                                <DialogFooter>
-                                    <Button
-                                        type="submit"
-                                        disabled={!ageSubmitReady || processing}
-                                    >
-                                        Confirm and continue
-                                    </Button>
-                                </DialogFooter>
-                            </>
-                        )}
-                    </Form>
-                </DialogContent>
-            </Dialog>
-
-            <div className="flex min-h-svh w-full flex-col items-center justify-start px-4 py-4 sm:justify-center sm:px-6 sm:py-8 lg:px-8">
-                {/* Content Container — flex-1 + mt-auto nav = bottom bar only when content is short (mobile) */}
-                <div className="flex w-full max-w-2xl flex-1 flex-col sm:flex-none">
-                    {/* Header with Logo */}
-                    <motion.div
-                        className="mb-6 sm:mb-10 md:mb-10"
-                        key={step}
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: 'easeOut' }}
-                    >
-                        <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-foreground/10 to-foreground/5 sm:mb-6">
-                            <AppLogoIcon className="h-8 w-8 object-contain" />
-                        </div>
-                        <div>
-                            <h1 className="font-serif text-xl leading-tight font-medium tracking-normal text-foreground italic sm:text-2xl sm:tracking-wider">
-                                {currentStep.title}
-                            </h1>
-                            <p className="mt-3 max-w-lg text-base text-muted-foreground sm:text-base">
-                                {currentStep.description}
-                            </p>
-                        </div>
-                    </motion.div>
-
-                    {/* Step Content */}
-                    <Card className="mb-8 rounded-xl border-none bg-transparent shadow-none ring-3 ring-primary-foreground/30 md:p-2">
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                className="space-y-6"
-                                key={step}
-                                initial={{ opacity: 0, x: 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -20 }}
-                                transition={{
-                                    duration: 0.35,
-                                    ease: 'easeInOut',
-                                }}
-                            >
-                                {/* Icon Display */}
-
-                                {/* Step-specific Content */}
-                                {step === 1 && (
-                                    <div className="space-y-4 text-center">
-                                        <p className="text-muted-foreground">
-                                            Get a fast admissions read before
-                                            you invest time in the wrong
-                                            priorities.
-                                        </p>
-                                        <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-3">
-                                            {[
-                                                'Analyzes academics, activities, and positioning',
-                                                'Benchmarks you against admitted students',
-                                                'Builds your step-by-step application plan',
-                                            ].map((item) => (
-                                                <div
-                                                    key={item}
-                                                    className="rounded-lg border border-muted bg-muted/50 p-3 text-left text-sm font-medium"
-                                                >
-                                                    {item}
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        <div className="rounded-lg border border-muted bg-muted/30 p-4 text-left">
-                                            <p className="text-xs tracking-wide text-muted-foreground uppercase">
-                                                Application Snapshot
-                                            </p>
-                                            <p className="mt-2 text-sm font-medium text-foreground/80 blur-[5px] select-none">
-                                                Admissions Readiness: 62/100
-                                            </p>
-                                            <p className="mt-1 text-xs text-muted-foreground select-none">
-                                                Committee risk: profile impact
-                                                is not yet differentiated for
-                                                target schools. Mentor
-                                                recommendation: tighten
-                                                narrative, quantify impact, and
-                                                improve school-fit signal.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {step === 2 && (
-                                    <div className="space-y-5">
-                                        <div>
-                                            <label className="mb-3 block text-sm font-medium text-foreground">
-                                                Paste what you have
-                                            </label>
-                                            <textarea
-                                                value={profileText}
-                                                onChange={(e) => {
-                                                    setProfileText(
-                                                        e.target.value,
-                                                    );
-                                                    setProfileClientError(null);
-                                                }}
-                                                maxLength={80000}
-                                                placeholder="GPA, classes, activities, leadership, awards, goals... just dump everything here."
-                                                className="min-h-32 w-full resize-none rounded-lg border border-input bg-background p-4 text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background focus:outline-none"
-                                            />
-                                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                                                <span>
-                                                    Word limit{' '}
-                                                    <span className="font-medium text-foreground">
-                                                        {maxProfileWords.toLocaleString()}
-                                                    </span>{' '}
-                                                    words
-                                                </span>
-                                                <span
-                                                    className={
-                                                        profileOverWordLimit
-                                                            ? 'font-medium text-destructive'
-                                                            : ''
-                                                    }
-                                                >
-                                                    {profileWordCount.toLocaleString()}{' '}
-                                                    /{' '}
-                                                    {maxProfileWords.toLocaleString()}
-                                                </span>
-                                            </div>
-                                            <InputError
-                                                message={
-                                                    errors.profile_text ??
-                                                    profileClientError ??
-                                                    undefined
-                                                }
-                                            />
-                                        </div>
-                                        <p className="text-center text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                                            or
-                                        </p>
-                                        <div className="relative rounded-lg border-2 border-dashed border-muted bg-muted/20 p-6 text-center">
-                                            <span className="mb-2 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                                                Coming soon
-                                            </span>
-                                            <Upload className="mx-auto mb-2 h-5 w-5 text-muted-foreground/50" />
-                                            <p className="text-sm font-medium text-muted-foreground">
-                                                Upload your profile (resume,
-                                                doc, or notes)
-                                            </p>
-                                            <p className="mt-1 text-xs text-muted-foreground">
-                                                File upload is not available
-                                                yet. Paste your content above
-                                                for now.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {step === 3 && (
-                                    <div className="space-y-3">
-                                        <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-3 sm:px-4 sm:py-4">
-                                            {noCapLoading && !noCapReport ? (
-                                                <div className="space-y-3">
-                                                    <p className="text-center text-xs text-muted-foreground sm:text-sm">
-                                                        {noCapLoadingMessage}
-                                                    </p>
-                                                    <div className="flex items-start gap-3 sm:gap-4">
-                                                        <Skeleton className="size-[7.5rem] shrink-0 rounded-full sm:size-36" />
-                                                        <div className="min-w-0 flex-1 space-y-2 pt-1">
-                                                            <Skeleton className="h-3 max-w-xs w-[82%]" />
-                                                            <Skeleton className="h-3 max-w-[10rem] w-[58%]" />
-                                                            <div className="flex flex-wrap gap-1.5 pt-1">
-                                                                <Skeleton className="h-5 w-16 rounded-full" />
-                                                                <Skeleton className="h-5 w-20 rounded-full" />
-                                                                <Skeleton className="h-5 w-14 rounded-full" />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ) : null}
-
-                                            {noCapError ? (
-                                                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-                                                    <p className="font-medium">
-                                                        Could not generate read
-                                                    </p>
-                                                    <p className="mt-1 text-xs">
-                                                        {noCapError}
-                                                    </p>
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="mt-3"
-                                                        onClick={() => {
-                                                            setNoCapError(null);
-                                                            setNoCapReport(
-                                                                null,
-                                                            );
-                                                            setNoCapLoadingMessage(
-                                                                'Generating your read… results appear here as soon as they are ready.',
-                                                            );
-                                                            setNoCapStreamKey(
-                                                                (k) => k + 1,
-                                                            );
-                                                        }}
-                                                    >
-                                                        Retry
-                                                    </Button>
-                                                </div>
-                                            ) : null}
-
-                                            {!noCapError &&
-                                                (noCapReport ||
-                                                    noCapLegacyOnly) && (
-                                                    <div>
-                                                        {noCapReport ? (
-                                                            <Tabs
-                                                                defaultValue="overview"
-                                                                className="w-full"
-                                                            >
-                                                                <TabsList
-                                                                    variant="line"
-                                                                    className="mb-3 grid h-9 w-full min-w-0 grid-cols-3 px-0 sm:mb-4"
-                                                                >
-                                                                    <TabsTrigger
-                                                                        value="overview"
-                                                                        className="text-xs sm:text-sm"
-                                                                    >
-                                                                        Overview
-                                                                    </TabsTrigger>
-                                                                    <TabsTrigger
-                                                                        value="details"
-                                                                        className="text-xs sm:text-sm"
-                                                                    >
-                                                                        Signals
-                                                                    </TabsTrigger>
-                                                                    <TabsTrigger
-                                                                        value="takeaways"
-                                                                        className="text-xs sm:text-sm"
-                                                                    >
-                                                                        Next
-                                                                        steps
-                                                                        <span className="ml-0.5 tabular-nums text-muted-foreground">
-                                                                            (
-                                                                            {
-                                                                                noCapReport
-                                                                                    .takeaways
-                                                                                    .length
-                                                                            }
-                                                                            )
-                                                                        </span>
-                                                                    </TabsTrigger>
-                                                                </TabsList>
-                                                                <TabsContent
-                                                                    value="overview"
-                                                                    className="mt-0 space-y-3"
-                                                                >
-                                                                    <p className="line-clamp-3 text-sm leading-snug font-semibold text-foreground sm:line-clamp-4 sm:text-[0.95rem]">
-                                                                        {
-                                                                            noCapReport.headline
-                                                                        }
-                                                                    </p>
-                                                                    <ChartContainer
-                                                                        config={
-                                                                            noCapRadarConfig
-                                                                        }
-                                                                        className="mx-auto aspect-square w-full max-w-[min(220px,70vw)] max-h-[220px] sm:max-h-[240px]"
-                                                                    >
-                                                                        <RadarChart
-                                                                            data={orderNoCapDimensions(
-                                                                                noCapReport.dimensions,
-                                                                            ).map(
-                                                                                (
-                                                                                    d,
-                                                                                ) => ({
-                                                                                    label: d.label,
-                                                                                    score: d.score,
-                                                                                }),
-                                                                            )}
-                                                                        >
-                                                                            <ChartTooltip
-                                                                                cursor={
-                                                                                    false
-                                                                                }
-                                                                                content={
-                                                                                    <ChartTooltipContent />
-                                                                                }
-                                                                            />
-                                                                            <PolarGrid className="stroke-foreground" />
-                                                                            <PolarAngleAxis
-                                                                                dataKey="label"
-                                                                                tick={{
-                                                                                    fontSize: 9,
-                                                                                    fill: 'hsl(var(--foreground))',
-                                                                                }}
-                                                                            />
-                                                                            <Radar
-                                                                                name="Signal"
-                                                                                dataKey="score"
-                                                                                fill="var(--chart-1)"
-                                                                                fillOpacity={
-                                                                                    0.45
-                                                                                }
-                                                                                stroke="var(--chart-1)"
-                                                                                strokeWidth={
-                                                                                    1.5
-                                                                                }
-                                                                            />
-                                                                        </RadarChart>
-                                                                    </ChartContainer>
-                                                                    <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                                                                        {orderNoCapDimensions(
-                                                                            noCapReport.dimensions,
-                                                                        ).map(
-                                                                            (
-                                                                                d,
-                                                                            ) => (
-                                                                                <li
-                                                                                    key={
-                                                                                        d.key
-                                                                                    }
-                                                                                    className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border/50 bg-background/50 px-2 py-1.5"
-                                                                                >
-                                                                                    <span className="truncate text-[10px] font-medium text-foreground sm:text-xs">
-                                                                                        {
-                                                                                            d.label
-                                                                                        }
-                                                                                    </span>
-                                                                                    <span
-                                                                                        className={`w-fit rounded-full border px-1.5 py-px text-[9px] font-semibold tracking-wide uppercase sm:text-[10px] ${verdictChipClass(d.verdict)}`}
-                                                                                    >
-                                                                                        {
-                                                                                            d.verdict
-                                                                                        }
-                                                                                    </span>
-                                                                                </li>
-                                                                            ),
-                                                                        )}
-                                                                    </ul>
-                                                                </TabsContent>
-                                                                <TabsContent
-                                                                    value="details"
-                                                                    className="mt-0 space-y-3"
-                                                                >
-                                                                    <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                                                                        Insight
-                                                                        chips
-                                                                    </p>
-                                                                    <div className="flex flex-wrap gap-1">
-                                                                        {noCapReport.insight_tokens.map(
-                                                                            (
-                                                                                t,
-                                                                                i,
-                                                                            ) => (
-                                                                                <span
-                                                                                    key={`${t.text}-${i}`}
-                                                                                    className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-[10px] leading-tight font-medium sm:text-[11px] ${insightToneClass(t.tone)}`}
-                                                                                >
-                                                                                    {
-                                                                                        t.text
-                                                                                    }
-                                                                                </span>
-                                                                            ),
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="pt-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                                                                        By area
-                                                                        (full)
-                                                                    </p>
-                                                                    <ul className="max-h-[min(40vh,16rem)] space-y-1 overflow-y-auto pr-1">
-                                                                        {orderNoCapDimensions(
-                                                                            noCapReport.dimensions,
-                                                                        ).map(
-                                                                            (
-                                                                                d,
-                                                                            ) => (
-                                                                                <li
-                                                                                    key={
-                                                                                        d.key
-                                                                                    }
-                                                                                    className="flex items-start justify-between gap-2 rounded-md border border-border/60 bg-background/60 px-2 py-1.5 text-xs"
-                                                                                >
-                                                                                    <span className="min-w-0 font-medium text-foreground">
-                                                                                        {
-                                                                                            d.label
-                                                                                        }
-                                                                                    </span>
-                                                                                    <span
-                                                                                        className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${verdictChipClass(d.verdict)}`}
-                                                                                    >
-                                                                                        {
-                                                                                            d.verdict
-                                                                                        }
-                                                                                    </span>
-                                                                                </li>
-                                                                            ),
-                                                                        )}
-                                                                    </ul>
-                                                                </TabsContent>
-                                                                <TabsContent
-                                                                    value="takeaways"
-                                                                    className="mt-0"
-                                                                >
-                                                                    <ul className="max-h-[min(50vh,20rem)] list-inside list-disc space-y-1.5 overflow-y-auto pr-1 text-xs leading-relaxed text-foreground/90 sm:text-sm">
-                                                                        {noCapReport.takeaways.map(
-                                                                            (
-                                                                                line,
-                                                                                i,
-                                                                            ) => (
-                                                                                <li
-                                                                                    key={`${line}-${i}`}
-                                                                                    className="marker:text-muted-foreground"
-                                                                                >
-                                                                                    {
-                                                                                        line
-                                                                                    }
-                                                                                </li>
-                                                                            ),
-                                                                        )}
-                                                                    </ul>
-                                                                </TabsContent>
-                                                            </Tabs>
-                                                        ) : (
-                                                            <p className="text-xs text-muted-foreground">
-                                                                This saved read
-                                                                predates the
-                                                                profile map.
-                                                                Retry to
-                                                                regenerate with
-                                                                scores and
-                                                                chips.
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {step === 4 && (
-                                    <>
-                                        <InputError
-                                            className="text-center text-sm"
-                                            message={errors.billing}
-                                        />
-                                        <div className="space-y-3">
-                                            {trialOnlyMode ? (
-                                                <p className="text-center text-xs text-muted-foreground">
-                                                    Sprint and Pro are paused
-                                                    while we keep costs down —
-                                                    the $1 trial includes full
-                                                    access.
-                                                </p>
-                                            ) : null}
-
-                                            {!trialOnlyMode ? (
-                                                <div className="flex justify-start">
-                                                    <div
-                                                        className={cn(
-                                                            'inline-flex gap-2 rounded-lg border border-muted bg-muted/30 p-1',
-                                                            billingComplete &&
-                                                                'pointer-events-none opacity-50',
-                                                        )}
-                                                    >
-                                                        <button
-                                                            type="button"
-                                                            disabled={
-                                                                billingComplete ||
-                                                                checkoutBusy
-                                                            }
-                                                            onClick={() =>
-                                                                setRecurringPlanCycle(
-                                                                    'monthly',
-                                                                )
-                                                            }
-                                                            className={`rounded-md px-2 py-1 text-sm font-medium transition-all disabled:cursor-not-allowed ${
-                                                                recurringPlanCycle ===
-                                                                'monthly'
-                                                                    ? 'bg-foreground text-background shadow-md'
-                                                                    : 'text-muted-foreground hover:text-foreground'
-                                                            }`}
-                                                        >
-                                                            Monthly
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={
-                                                                billingComplete ||
-                                                                checkoutBusy
-                                                            }
-                                                            onClick={() =>
-                                                                setRecurringPlanCycle(
-                                                                    'annual',
-                                                                )
-                                                            }
-                                                            className={`rounded-md px-2 py-1 text-sm font-medium transition-all disabled:cursor-not-allowed ${
-                                                                recurringPlanCycle ===
-                                                                'annual'
-                                                                    ? 'bg-foreground text-background shadow-md'
-                                                                    : 'text-muted-foreground hover:text-foreground'
-                                                            }`}
-                                                        >
-                                                            Annual
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : null}
-
-                                            <div
-                                                className={cn(
-                                                    'grid gap-2',
-                                                    !trialOnlyMode &&
-                                                        'md:grid-cols-2',
-                                                )}
-                                            >
-                                                {/* Trial Plan - Now Featured */}
-                                                <div
-                                                    className={cn(
-                                                        'relative flex flex-col rounded-xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-600 to-emerald-700 p-2.5 text-white shadow-lg transition-all hover:shadow-xl',
-                                                        trialSelected &&
-                                                            'ring-2 ring-emerald-400 ring-offset-2 ring-offset-background',
-                                                        dimUnselectedPlans &&
-                                                            !trialSelected &&
-                                                            'pointer-events-none opacity-45 grayscale select-none',
-                                                    )}
-                                                >
-                                                    <div className="absolute -top-2 right-4 rounded-full bg-emerald-400 px-2 py-0.5 text-[10px] font-bold text-emerald-950 uppercase">
-                                                        Best
-                                                    </div>
-                                                    <div className="mb-2 flex-1">
-                                                        <p className="text-sm font-semibold">
-                                                            $1 Trial • 3 days full access
-                                                        </p>
-                                                        <p className="mt-1 text-lg font-bold">
-                                                            $1
-                                                        </p>
-                                                    </div>
-                                                    <Button
-                                                        type="button"
-                                                        className="w-full bg-emerald-400 font-semibold text-emerald-950 transition-colors hover:bg-emerald-300 disabled:opacity-60"
-                                                        disabled={
-                                                            billingComplete ||
-                                                            checkoutBusy ||
-                                                            (dimUnselectedPlans &&
-                                                                !trialSelected)
-                                                        }
-                                                        onClick={() =>
-                                                            submitCheckoutPlan(
-                                                                'trial',
-                                                            )
-                                                        }
-                                                    >
-                                                        {checkoutPlanBusy ===
-                                                        'trial' ? (
-                                                            <>
-                                                                <CircleNotch
-                                                                    className="mr-2 inline size-4 animate-spin"
-                                                                    aria-hidden
-                                                                />
-                                                                Redirecting to
-                                                                checkout...
-                                                            </>
-                                                        ) : billingComplete &&
-                                                          trialSelected ? (
-                                                            'Selected plan'
-                                                        ) : (
-                                                            'Start $1 Trial'
-                                                        )}
-                                                    </Button>
-                                                </div>
-
-                                                {!trialOnlyMode ? (
-                                                    <>
-                                                        {/* Sprint Plan - Now Secondary */}
-                                                        <div
-                                                    className={cn(
-                                                        'relative flex flex-col rounded-xl border border-muted bg-muted/30 p-2.5 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
-                                                        sprintSelected &&
-                                                            'ring-2 ring-primary/50 ring-offset-2 ring-offset-background',
-                                                        dimUnselectedPlans &&
-                                                            !sprintSelected &&
-                                                            'pointer-events-none opacity-45 grayscale select-none',
-                                                    )}
-                                                >
-                                                    <div className="absolute -top-2 right-4 rounded-full bg-muted px-2 py-0.5 text-[9px] font-medium text-muted-foreground uppercase">
-                                                        Popular
-                                                    </div>
-                                                    <div className="mb-2 flex-1">
-                                                        <p className="text-sm font-semibold text-foreground">
-                                                            Sprint • 90 days
-                                                        </p>
-                                                        <p className="mt-1 text-lg font-bold text-foreground">
-                                                            $29
-                                                        </p>
-                                                    </div>
-                                                    <Button
-                                                        type="button"
-                                                        className="mt-6 w-full"
-                                                        variant="outline"
-                                                        disabled={
-                                                            billingComplete ||
-                                                            checkoutBusy ||
-                                                            (dimUnselectedPlans &&
-                                                                !sprintSelected)
-                                                        }
-                                                        onClick={() =>
-                                                            submitCheckoutPlan(
-                                                                'sprint',
-                                                            )
-                                                        }
-                                                    >
-                                                        {checkoutPlanBusy ===
-                                                        'sprint' ? (
-                                                            <>
-                                                                <CircleNotch
-                                                                    className="mr-2 inline size-4 animate-spin"
-                                                                    aria-hidden
-                                                                />
-                                                                Redirecting to
-                                                                checkout...
-                                                            </>
-                                                        ) : billingComplete &&
-                                                          sprintSelected ? (
-                                                            'Selected'
-                                                        ) : (
-                                                            'Select Sprint'
-                                                        )}
-                                                    </Button>
-                                                </div>
-
-                                                {/* Pro Plan */}
-                                                <div
-                                                    className={cn(
-                                                        'flex flex-col rounded-xl border border-muted bg-muted/30 p-2.5 transition-all hover:border-muted-foreground/30 hover:bg-muted/50',
-                                                        proSelected &&
-                                                            'ring-2 ring-primary/50 ring-offset-2 ring-offset-background',
-                                                        dimUnselectedPlans &&
-                                                            !proSelected &&
-                                                            'pointer-events-none opacity-45 grayscale select-none',
-                                                    )}
-                                                >
-                                                    <div className="mb-2 flex-1">
-                                                        <p className="text-sm font-semibold text-foreground">
-                                                            Pro • Unlimited
-                                                        </p>
-                                                        <p className="mt-1 text-lg font-bold text-foreground">
-                                                            $
-                                                            {recurringPlanCycle ===
-                                                            'monthly'
-                                                                ? '15'
-                                                                : '150'}
-                                                            <span className="text-xs font-normal text-muted-foreground">
-                                                                {recurringPlanCycle ===
-                                                                'monthly'
-                                                                    ? '/mo'
-                                                                    : '/yr'}
-                                                            </span>
-                                                        </p>
-                                                    </div>
-                                                    <Button
-                                                        type="button"
-                                                        className="w-full"
-                                                        variant="outline"
-                                                        disabled={
-                                                            billingComplete ||
-                                                            checkoutBusy ||
-                                                            (dimUnselectedPlans &&
-                                                                !proSelected)
-                                                        }
-                                                        onClick={() =>
-                                                            submitCheckoutPlan(
-                                                                'pro',
-                                                            )
-                                                        }
-                                                    >
-                                                        {checkoutPlanBusy ===
-                                                        'pro' ? (
-                                                            <>
-                                                                <CircleNotch
-                                                                    className="mr-2 inline size-4 animate-spin"
-                                                                    aria-hidden
-                                                                />
-                                                                Redirecting to
-                                                                checkout...
-                                                            </>
-                                                        ) : billingComplete &&
-                                                          proSelected ? (
-                                                            'Selected'
-                                                        ) : (
-                                                            'Select Pro'
-                                                        )}
-                                                    </Button>
-                                                        </div>
-                                                    </>
-                                                ) : null}
-                                            </div>
-                                            <InputError
-                                                className="text-center text-sm"
-                                                message={
-                                                    errors.plan ??
-                                                    checkoutForm.errors.plan
-                                                }
-                                            />
-                                            {!billingComplete ? (
-                                                <Form
-                                                    action="/onboarding/skip-billing"
-                                                    method="post"
-                                                    options={{ preserveScroll: true }}
-                                                    className="text-center"
-                                                >
-                                                    <Button
-                                                        type="submit"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-xs text-muted-foreground"
-                                                    >
-                                                        Skip for now
-                                                    </Button>
-                                                </Form>
-                                            ) : null}
-                                        </div>
-                                    </>
-                                )}
-
-                                {step === 5 && (
-                                    <div className="space-y-4 text-center">
-                                        <div className="space-y-4 rounded-lg border border-muted bg-muted/30 p-6">
-                                            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-foreground/20 bg-foreground/10">
-                                                <ListChecksIcon className="h-6 w-6 text-foreground" />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-foreground">
-                                                    Your profile baseline is
-                                                    ready.
-                                                </p>
-                                                <p className="mt-1 text-xs text-muted-foreground">
-                                                    This is where your journey
-                                                    begins. Track improvements,
-                                                    fix gaps, and build an
-                                                    application that stands out.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </motion.div>
-                        </AnimatePresence>
-                    </Card>
-
-                    {/* Navigation — not fixed: sticks to viewport bottom when content is short; follows content when long (scroll) */}
-                    <div className="mt-auto px-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pt-0 sm:pb-0">
-                                        {step === 4 ? (
-                                            <p className="mb-2 text-center text-sm text-muted-foreground sm:hidden">
-                                                {billingComplete
-                                                    ? 'Tap Continue for the next step.'
-                                                    : 'Pick a plan, skip for now, or complete checkout in Stripe.'}
-                                            </p>
-                                        ) : null}
-                        <div className="flex items-center justify-between gap-2 sm:gap-4">
-                            <Button
-                                variant="outline"
-                                size="lg"
-                                onClick={handleBack}
-                                disabled={step === 1 || needsAgeGate}
-                                className="w-1/2 sm:w-auto"
-                            >
-                                <CaretLeft className="mr-2 h-4 w-4" />
-                                Back
-                            </Button>
-
-                            {step === 4 ? (
-                                <p className="hidden flex-1 text-center text-sm text-muted-foreground sm:block sm:text-right">
-                                    {billingComplete
-                                        ? 'Continue when you are ready.'
-                                        : 'Use a plan card above, or skip billing for now.'}
-                                </p>
-                            ) : null}
-                            {step < STEPS.length ? (
-                                <Button
-                                    onClick={handleNext}
-                                    size="lg"
-                                    disabled={
-                                        (step === 3 &&
-                                            (noCapLoading || !noCapFinished)) ||
-                                        stepProcessing ||
-                                        needsAgeGate
-                                    }
-                                    className="w-1/2 sm:w-auto"
-                                >
-                                    {step === 1
-                                        ? 'Analyze My Application'
-                                        : 'Continue'}
-                                    <CaretRight className="ml-2 h-4 w-4" />
-                                </Button>
-                            ) : (
-                                <Form
-                                    action={OnboardingController.complete.url()}
-                                    method="post"
-                                    options={{ preserveScroll: true }}
-                                    className="w-1/2 sm:w-auto"
-                                >
-                                    {({ processing }) => (
-                                        <Button
-                                            type="submit"
-                                            size="lg"
-                                            className="w-full sm:w-auto"
-                                            disabled={processing || needsAgeGate}
-                                        >
-                                            Start Your Journey
-                                            <RocketLaunch className="ml-2 h-4 w-4" />
-                                        </Button>
-                                    )}
-                                </Form>
-                            )}
+                            </div>
                         </div>
                     </div>
-                    <InputError
-                        className="mt-2 text-center"
-                        message={errors.onboarding}
-                    />
-
-                    {step === 1 && (
-                        <p className="mt-4 text-center text-xs text-muted-foreground">
-                            Most students overestimate their chances. This shows
-                            you the truth.
-                        </p>
-                    )}
-
-                </div>
+                </main>
             </div>
         </>
     );

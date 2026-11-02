@@ -1,16 +1,38 @@
 'use client';
 
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowLeft,
-    CalendarBlank,
-    Coin,
-    LinkSimple,
-    MapPin,
+    ArrowRight,
+    ArrowSquareOut,
+    ClipboardText,
+    Info,
+    NotePencil,
+    Plus,
+    Scales,
+    WarningCircle,
 } from '@phosphor-icons/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { CollegeAssessmentView } from '@/components/admitme/college-assessment';
+import { CollegeKnowledge } from '@/components/admitme/college-knowledge';
+import {
+    Callout,
+    CHOICE_TONE,
+    deadlineOf,
+    joinParts,
+    placeOf,
+    TierIcon,
+    TIERS,
+} from '@/components/college/college-ui';
+import {
+    KeyValueList,
+    KeyValueRow,
+    Page,
+    PageHeader,
+    Section,
+    StatusBadge,
+} from '@/components/page/kit';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
     Select,
     SelectContent,
@@ -18,12 +40,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import {
-    type ApplicationStatus,
-    type CollegeRow,
-    fitScoreStyles,
-    tierLabel,
-    tierStyles,
+import { choiceStatusLabel } from '@/lib/college-list-display';
+import type {
+    ApplicationStatus,
+    CollegeChoiceStatus,
+    CollegeRow,
 } from '@/lib/college-list-display';
 import {
     buildLaravelJsonHeaders,
@@ -46,32 +67,94 @@ const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
     { value: 'waitlisted', label: 'Waitlisted' },
 ];
 
+const cardClass = 'rounded-2xl border border-border bg-card';
+
 export default function CollegeListSchoolPage() {
     const { school } = usePage<PageProps>().props;
 
-    const [applicationStatus, setApplicationStatus] = useState<ApplicationStatus>(
-        school.applicationStatus,
-    );
+    const [applicationStatus, setApplicationStatus] =
+        useState<ApplicationStatus>(school.applicationStatus);
     const [studentNotes, setStudentNotes] = useState(school.studentNotes ?? '');
+    const [choiceStatus, setChoiceStatus] = useState<CollegeChoiceStatus>(
+        school.choiceStatus,
+    );
+    const [revision, setRevision] = useState(school.revision);
+    const [applicationId, setApplicationId] = useState(school.applicationId);
+    const [conflict, setConflict] = useState<string | null>(null);
     const [savedFlash, setSavedFlash] = useState(false);
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
+    // When the server sends a different version of this college, start again from it.
+    const serverVersion = JSON.stringify([
+        school.id,
+        school.applicationStatus,
+        school.studentNotes,
+        school.choiceStatus,
+        school.revision,
+        school.applicationId,
+    ]);
+    const [syncedVersion, setSyncedVersion] = useState(serverVersion);
+
+    if (syncedVersion !== serverVersion) {
+        setSyncedVersion(serverVersion);
         setApplicationStatus(school.applicationStatus);
         setStudentNotes(school.studentNotes ?? '');
-    }, [school.applicationStatus, school.studentNotes, school.id]);
+        setChoiceStatus(school.choiceStatus);
+        setRevision(school.revision);
+        setApplicationId(school.applicationId);
+        setConflict(null);
+    }
 
     const saveProgress = useCallback(
-        async (patch: { application_status?: ApplicationStatus; student_notes?: string | null }) => {
+        async (patch: {
+            application_status?: ApplicationStatus;
+            student_notes?: string | null;
+            choice_status?: CollegeChoiceStatus;
+        }) => {
             setSaving(true);
+
             try {
                 const res = await fetch(`/college-lists/${school.id}`, {
                     method: 'PATCH',
                     credentials: 'same-origin',
                     headers: buildLaravelJsonHeaders(readCsrfTokenFromMeta()),
-                    body: JSON.stringify(patch),
+                    body: JSON.stringify({
+                        ...patch,
+                        expected_revision: revision,
+                    }),
                 });
+                const data = (await res.json().catch(() => ({}))) as {
+                    message?: string;
+                    revision?: number;
+                    choiceStatus?: CollegeChoiceStatus;
+                    applicationStatus?: ApplicationStatus;
+                    applicationId?: string | null;
+                };
+
+                if (res.status === 409) {
+                    // Someone (another tab, the mentor) changed this college first; don't overwrite it.
+                    setConflict(
+                        data.message ??
+                            'This college changed since you opened it.',
+                    );
+
+                    return;
+                }
+
                 if (res.ok) {
+                    if (typeof data.revision === 'number') {
+                        setRevision(data.revision);
+                    }
+
+                    if (data.choiceStatus) {
+                        setChoiceStatus(data.choiceStatus);
+                    }
+
+                    if (data.applicationStatus) {
+                        setApplicationStatus(data.applicationStatus);
+                    }
+
+                    setApplicationId(data.applicationId ?? null);
                     setSavedFlash(true);
                     window.setTimeout(() => setSavedFlash(false), 2000);
                 }
@@ -79,180 +162,299 @@ export default function CollegeListSchoolPage() {
                 setSaving(false);
             }
         },
-        [school.id],
+        [school.id, revision],
     );
+
+    const locked = saving || conflict !== null;
+    const deadline = deadlineOf(school);
+    const noAidEstimate =
+        school.netCostEstimate === '—' && school.aidEstimate === '—';
+    const whyFit =
+        school.whyFit && school.whyFit !== '—' ? school.whyFit : null;
+
+    const primaryAction =
+        choiceStatus === 'suggested' ? (
+            <Button
+                className="h-9 gap-2 rounded-full px-4"
+                disabled={locked}
+                onClick={() =>
+                    void saveProgress({ choice_status: 'shortlisted' })
+                }
+            >
+                <Plus className="size-4" />
+                Add to my shortlist
+            </Button>
+        ) : choiceStatus === 'shortlisted' ? (
+            <Button
+                className="h-9 gap-2 rounded-full px-4"
+                disabled={locked}
+                onClick={() => void saveProgress({ choice_status: 'applying' })}
+            >
+                <ClipboardText className="size-4" />
+                Start application
+            </Button>
+        ) : choiceStatus === 'applying' && applicationId ? (
+            <Button className="h-9 gap-2 rounded-full px-4" asChild>
+                <Link href={`/applications/${applicationId}`}>
+                    Open application
+                    <ArrowRight className="size-4" />
+                </Link>
+            </Button>
+        ) : undefined;
 
     return (
         <>
             <Head title={school.name} />
 
-            <div className="page-shell">
-                <div className="mb-4">
-                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" asChild>
-                        <Link href={collegeLists.url()}>
+            <Page width="narrow">
+                <PageHeader
+                    eyebrow={
+                        <Link
+                            href={collegeLists.url()}
+                            className="inline-flex items-center gap-1 rounded-md transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                        >
                             <ArrowLeft className="size-3.5" aria-hidden />
-                            Back to list
+                            College lists
                         </Link>
-                    </Button>
-                </div>
-
-                <header className="mb-6 space-y-2 border-b border-border/50 pb-4">
-                    <h1 className="page-title text-balance">{school.name}</h1>
-                    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <MapPin className="size-4 shrink-0" aria-hidden />
-                        {school.location}
-                    </p>
-                </header>
-
-                <div className="mx-auto max-w-2xl space-y-0 divide-y divide-border/40">
-                    <section className="py-4">
-                        <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                            Fit breakdown
-                        </h2>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span
-                                className={cn(
-                                    'rounded-md border border-border/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-                                    tierStyles(school.tier),
-                                )}
-                            >
-                                {tierLabel(school.tier)}
+                    }
+                    title={<span className="text-balance">{school.name}</span>}
+                    description={
+                        <>
+                            <span className="flex items-center gap-1.5">
+                                <TierIcon tier={school.tier} size="sm" />
+                                {joinParts([
+                                    TIERS[school.tier].label,
+                                    placeOf(school),
+                                ])}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                                Overall fit{' '}
-                                <strong
-                                    className={cn(
-                                        'text-base font-semibold text-foreground',
-                                        fitScoreStyles(school.fitScore),
-                                    )}
-                                >
-                                    {school.fitScore}
-                                </strong>
-                                <span className="text-muted-foreground">/100</span>
-                            </span>
-                        </div>
-                    </section>
-                    <section className="py-4">
-                        <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                            Why this school
-                        </h2>
-                        <p className="text-sm leading-relaxed text-foreground">{school.whyFit}</p>
-                    </section>
-                    <section className="py-4">
-                        <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                            My progress
-                        </h2>
-                        <div className="space-y-3">
-                            <div>
-                                <Label className="text-xs text-muted-foreground">Application status</Label>
-                                <Select
-                                    value={applicationStatus}
-                                    onValueChange={(v) => {
-                                        const next = v as ApplicationStatus;
-                                        setApplicationStatus(next);
-                                        void saveProgress({ application_status: next });
-                                    }}
-                                    disabled={saving}
-                                >
-                                    <SelectTrigger className="mt-1">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {STATUS_OPTIONS.map((o) => (
-                                            <SelectItem key={o.value} value={o.value}>
-                                                {o.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <Label htmlFor="school-notes" className="text-xs text-muted-foreground">
-                                    Your notes
-                                </Label>
-                                <textarea
-                                    id="school-notes"
-                                    value={studentNotes}
-                                    onChange={(e) => setStudentNotes(e.target.value)}
-                                    onBlur={() => {
-                                        void saveProgress({
-                                            student_notes: studentNotes.trim() === '' ? null : studentNotes.trim(),
-                                        });
-                                    }}
-                                    rows={4}
-                                    maxLength={1000}
-                                    disabled={saving}
-                                    className="mt-1 flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                    placeholder="Deadlines you’re tracking, visit plans, essay ideas…"
-                                />
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    {studentNotes.length}/1000 · saved when you leave the field
-                                </p>
-                            </div>
-                            {savedFlash ? (
-                                <p className="text-xs font-medium text-chart-2">Saved</p>
+                            {whyFit ? (
+                                <span className="mt-1.5 block">{whyFit}</span>
                             ) : null}
+                        </>
+                    }
+                    actions={primaryAction}
+                />
+
+                {conflict ? (
+                    <div role="alert" className="mb-8">
+                        <Callout
+                            tone="danger"
+                            icon={WarningCircle}
+                            title={conflict}
+                            action={
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 rounded-full bg-card px-3.5"
+                                    onClick={() => router.reload()}
+                                >
+                                    Reload latest
+                                </Button>
+                            }
+                        />
+                    </div>
+                ) : null}
+
+                <Section title="Key facts" icon={Info}>
+                    <div className={cn(cardClass, 'px-5')}>
+                        <KeyValueList>
+                            <KeyValueRow
+                                label="Overall fit"
+                                value={
+                                    <span className="nums">
+                                        {school.fitScore}
+                                        <span className="font-normal text-muted-foreground">
+                                            /100
+                                        </span>
+                                    </span>
+                                }
+                            />
+                            <KeyValueRow
+                                label="Deadlines"
+                                value={
+                                    <span
+                                        className={cn(
+                                            'whitespace-pre-line',
+                                            deadline.none &&
+                                                'font-normal text-muted-foreground',
+                                        )}
+                                    >
+                                        {deadline.text}
+                                    </span>
+                                }
+                            />
+                            {school.admissionsCycleLabel ? (
+                                <KeyValueRow
+                                    label="Admissions cycle"
+                                    value={school.admissionsCycleLabel}
+                                />
+                            ) : null}
+                            <KeyValueRow
+                                label="Application portal"
+                                hint={
+                                    school.applicationPortalUrl
+                                        ? undefined
+                                        : 'Confirm on the college’s admissions site.'
+                                }
+                                value={
+                                    school.applicationPortalUrl ? (
+                                        <a
+                                            href={school.applicationPortalUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                                        >
+                                            Open official portal
+                                            <ArrowSquareOut
+                                                className="size-3.5"
+                                                aria-hidden
+                                            />
+                                        </a>
+                                    ) : (
+                                        <span className="font-normal text-muted-foreground">
+                                            No verified link saved
+                                        </span>
+                                    )
+                                }
+                            />
+                            {noAidEstimate ? (
+                                <KeyValueRow
+                                    label="Financial aid estimate"
+                                    value={
+                                        <span className="font-normal text-muted-foreground">
+                                            Not yet available
+                                        </span>
+                                    }
+                                />
+                            ) : (
+                                <>
+                                    <KeyValueRow
+                                        label="Net cost (rough band)"
+                                        hint="AI research — not verified"
+                                        value={school.netCostEstimate}
+                                    />
+                                    <KeyValueRow
+                                        label="Aid outlook"
+                                        hint="AI research — not verified"
+                                        value={school.aidEstimate}
+                                    />
+                                </>
+                            )}
+                        </KeyValueList>
+                    </div>
+                </Section>
+
+                {school.assessment ? (
+                    <Section title="Fit check" icon={Scales}>
+                        <div className={cn(cardClass, 'p-5')}>
+                            <CollegeAssessmentView
+                                assessment={school.assessment}
+                            />
                         </div>
-                    </section>
-                    <section className="py-4">
-                        <h2 className="mb-3 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                            <CalendarBlank className="size-3" aria-hidden />
-                            Deadlines
-                        </h2>
-                        <p className="whitespace-pre-line text-sm leading-snug text-foreground">
-                            {school.deadlinesDisplay?.trim() || school.deadline || '—'}
-                        </p>
-                        {school.admissionsCycleLabel ? (
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Cycle:{' '}
-                                <span className="font-medium text-foreground">
-                                    {school.admissionsCycleLabel}
+                    </Section>
+                ) : null}
+
+                <Section
+                    title="Your progress"
+                    icon={NotePencil}
+                    actions={
+                        <span aria-live="polite" className="text-[12.5px]">
+                            {saving ? (
+                                <span className="text-muted-foreground">
+                                    Saving…
                                 </span>
-                            </p>
-                        ) : null}
-                    </section>
-                    <section className="py-4">
-                        <h2 className="mb-3 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                            <LinkSimple className="size-3" aria-hidden />
-                            Application
-                        </h2>
-                        {school.applicationPortalUrl ? (
-                            <a
-                                href={school.applicationPortalUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-primary underline-offset-2 hover:underline"
+                            ) : savedFlash ? (
+                                <span className="text-emerald-700 dark:text-emerald-300">
+                                    Saved
+                                </span>
+                            ) : null}
+                        </span>
+                    }
+                >
+                    <div className={cn(cardClass, 'px-5')}>
+                        <KeyValueList>
+                            <KeyValueRow
+                                label="List status"
+                                value={
+                                    <StatusBadge
+                                        tone={CHOICE_TONE[choiceStatus]}
+                                    >
+                                        {choiceStatusLabel(choiceStatus)}
+                                    </StatusBadge>
+                                }
+                            />
+                            <KeyValueRow
+                                label="Application status"
+                                value={
+                                    <Select
+                                        value={applicationStatus}
+                                        onValueChange={(v) => {
+                                            const next = v as ApplicationStatus;
+                                            setApplicationStatus(next);
+                                            void saveProgress({
+                                                application_status: next,
+                                            });
+                                        }}
+                                        disabled={locked}
+                                    >
+                                        <SelectTrigger
+                                            size="sm"
+                                            className="h-8 rounded-lg text-[13px] font-normal"
+                                            aria-label="Application status"
+                                        >
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent align="end">
+                                            {STATUS_OPTIONS.map((o) => (
+                                                <SelectItem
+                                                    key={o.value}
+                                                    value={o.value}
+                                                >
+                                                    {o.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                }
+                            />
+                        </KeyValueList>
+                        <div className="border-t border-border py-4">
+                            <label
+                                htmlFor="school-notes"
+                                className="text-[14px] text-foreground"
                             >
-                                Open official portal
-                            </a>
-                        ) : (
-                            <p className="text-sm text-muted-foreground">
-                                No verified portal link saved — confirm on the school’s admissions site.
+                                Your notes
+                            </label>
+                            <textarea
+                                id="school-notes"
+                                value={studentNotes}
+                                onChange={(e) =>
+                                    setStudentNotes(e.target.value)
+                                }
+                                onBlur={() => {
+                                    void saveProgress({
+                                        student_notes:
+                                            studentNotes.trim() === ''
+                                                ? null
+                                                : studentNotes.trim(),
+                                    });
+                                }}
+                                rows={4}
+                                maxLength={1000}
+                                disabled={locked}
+                                className="mt-2 flex min-h-[100px] w-full resize-y rounded-xl border border-input bg-background px-3 py-2.5 text-[14px] leading-relaxed text-foreground transition-[border-color,box-shadow] outline-none placeholder:text-muted-foreground/70 focus-visible:border-foreground/30 focus-visible:ring-3 focus-visible:ring-ring/25 disabled:opacity-60"
+                                placeholder="Deadlines you’re tracking, visit plans, essay ideas…"
+                            />
+                            <p className="nums mt-1.5 text-[12.5px] text-muted-foreground">
+                                {studentNotes.length}/1000 · saved when you
+                                leave the field
                             </p>
-                        )}
-                    </section>
-                    {school.netCostEstimate === '—' && school.aidEstimate === '—' ? (
-                        <p className="text-sm text-muted-foreground">
-                            Financial aid estimate not yet available for this school.
-                        </p>
-                    ) : (
-                        <section className="py-4">
-                            <h2 className="mb-3 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-                                <Coin className="size-3" aria-hidden />
-                                Financial aid estimator
-                            </h2>
-                            <p className="text-xs text-muted-foreground">Net cost line (rough band)</p>
-                            <p className="mt-1 text-sm font-medium text-foreground">
-                                {school.netCostEstimate}
-                            </p>
-                            <p className="mt-3 text-xs text-muted-foreground">Aid outlook</p>
-                            <p className="mt-0.5 text-sm leading-snug text-foreground">
-                                {school.aidEstimate}
-                            </p>
-                        </section>
-                    )}
-                </div>
-            </div>
+                        </div>
+                    </div>
+                </Section>
+
+                <CollegeKnowledge schoolId={school.id} />
+            </Page>
         </>
     );
 }

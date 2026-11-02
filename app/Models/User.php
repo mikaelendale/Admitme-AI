@@ -17,7 +17,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 
 #[Fillable(['name', 'email', 'password', 'provider', 'provider_id', 'avatar', 'onboarded', 'notification_preferences', 'ai_preferences', 'platform_pass_plan', 'platform_pass_ends_at', 'notified_expiry_at', 'payment_failed_notified_at', 'platform_pass_applied_checkout_session_ids', 'profile_pdf_resume_parse_count'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable #implements MustVerifyEmail
+class User extends Authenticatable // implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use Billable, HasFactory, Notifiable, TwoFactorAuthenticatable;
@@ -62,6 +62,21 @@ class User extends Authenticatable #implements MustVerifyEmail
     public function collegeListRuns(): HasMany
     {
         return $this->hasMany(CollegeListRun::class);
+    }
+
+    public function applications(): HasMany
+    {
+        return $this->hasMany(Application::class);
+    }
+
+    public function studentFacts(): HasMany
+    {
+        return $this->hasMany(StudentFact::class);
+    }
+
+    public function auditEvents(): HasMany
+    {
+        return $this->hasMany(AuditEvent::class);
     }
 
     public function collegeListSchools(): HasMany

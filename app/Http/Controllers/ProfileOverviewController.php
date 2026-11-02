@@ -84,6 +84,7 @@ class ProfileOverviewController extends Controller
             ],
             'profile' => [
                 'status' => $row->status,
+                'revision' => (int) $row->revision,
                 'profile_dump_text' => $row->profile_dump_text,
                 'resume_pdf_unreadable' => (bool) $row->resume_pdf_unreadable,
                 'demographics' => [

@@ -1,0 +1,8 @@
+{
+  "name": "admitme-e2e-harness",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}

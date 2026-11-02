@@ -4,310 +4,217 @@ namespace App\Http\Controllers;
 
 use App\Actions\Billing\ApplyPlatformPassFromCheckoutSession;
 use App\Actions\Billing\FinalizeOnboardingCheckoutSession;
-use App\Ai\Agents\NoCapAgent;
+use App\Domain\Documents\DocumentService;
+use App\Domain\Documents\DocumentTextExtractor;
+use App\Domain\Shared\ChangeSource;
+use App\Domain\Students\GuidedOnboarding;
+use App\Domain\Students\GuidedProfileSetup;
 use App\Http\Requests\Onboarding\CompleteOnboardingRequest;
-use App\Http\Requests\Onboarding\SaveStepRequest;
 use App\Http\Requests\Onboarding\StartOnboardingCheckoutRequest;
 use App\Jobs\BuildUserAiContextJob;
+use App\Models\Document;
 use App\Models\OnboardingProfile;
 use App\Models\OnboardingResponse;
 use App\Models\OnboardingSession;
+use App\Models\StudentFact;
 use App\Models\User;
-use Illuminate\Http\JsonResponse;
+use App\Support\PlatformAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 use Inertia\Inertia;
 use Inertia\Response;
-use Laravel\Ai\Responses\StructuredAgentResponse;
 use Laravel\Cashier\Cashier;
 use Stripe\Exception\ApiErrorException;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
-use Throwable;
 
+/**
+ * First-run onboarding, in the order of the build plan's Phase 4: consent, then situation & intake,
+ * curriculum & grades, interests, destinations, budget/currency & aid, optional documents, and a review
+ * that asks only the questions still blocking the next tasks. Every answer is saved as the student goes
+ * (resumable after a reload) through the same profile service as every other edit, and "don't know" is
+ * always a valid answer. A plan step appears only when billing enforcement applies to this student.
+ */
 class OnboardingController extends Controller
 {
-    public function show(Request $request): Response|RedirectResponse
+    private const MAX_UPLOAD_KB = 10240;
+
+    /** @var array<string, string> */
+    public const AGE_RANGES = [
+        '13_14' => '13–14',
+        '15_16' => '15–16',
+        '17_18' => '17–18',
+        '19plus' => '19 or older',
+    ];
+
+    public function show(Request $request, DocumentTextExtractor $extractor): Response|RedirectResponse
     {
         $user = $request->user();
         if ($user->onboarded) {
             return redirect()->route('dashboard');
         }
 
-        $profile = OnboardingProfile::firstOrCreate(
-            ['user_id' => $user->id],
-            ['status' => 'draft']
-        );
-
-        $session = OnboardingSession::query()
-            ->where('user_id', $user->id)
-            ->where('status', 'in_progress')
-            ->latest('id')
-            ->first();
-
-        if (! $session) {
-            $session = OnboardingSession::create([
-                'user_id' => $user->id,
-                'session_uuid' => (string) Str::uuid(),
-                'status' => 'in_progress',
-            ]);
-        }
-
+        $profile = OnboardingProfile::firstOrCreate(['user_id' => $user->id], ['status' => 'draft']);
+        $session = $this->resolveInProgressSession($user->id);
         $this->maybeVerifyCheckoutReturn($request, $user, $session);
 
-        $responses = OnboardingResponse::query()
-            ->where('onboarding_session_id', $session->id)
-            ->get()
-            ->keyBy('question_key');
+        $consented = $this->consented($profile);
+        $state = GuidedOnboarding::state($profile);
+        $billing = $this->billingState($user, $session, $request);
 
-        $needsAgeGate = ! $profile->is_age_13_or_older_confirmed || ! $profile->legal_accepted_at;
+        $steps = [[
+            'key' => 'consent',
+            'title' => 'Before we start',
+            'intro' => 'AdmitMe is for students aged 13 and over. Confirm your age range and the terms to begin.',
+            'completed' => $consented,
+            'fields' => [],
+        ]];
+        foreach (GuidedProfileSetup::sections($profile) as $section) {
+            $steps[] = $section;
+        }
+        if ($billing['needed']) {
+            $steps[] = [
+                'key' => 'plan',
+                'title' => 'Your plan',
+                'intro' => 'Choose how you want to continue. You can also decide later from Settings → Billing.',
+                'completed' => $billing['checkout_verified'] || $billing['has_access'],
+                'fields' => [],
+            ];
+        }
 
-        $checkoutVerified = OnboardingResponse::query()
-            ->where('onboarding_session_id', $session->id)
-            ->where('question_key', 'billing.checkout_verified')
-            ->exists();
+        $keys = array_column($steps, 'key');
+        $requested = $request->query('step');
+        $current = match (true) {
+            ! $consented => 'consent',
+            is_string($requested) && $requested !== 'consent' && in_array($requested, $keys, true) => $requested,
+            default => $state['current'],
+        };
 
-        $lastStepKey = (int) ($session->last_step_key ?? '1');
-
-        $verifiedRow = $responses->get('billing.checkout_verified');
-        $intentRow = $responses->get('billing.checkout_intent');
-        $plan = data_get($verifiedRow?->answer_json, 'plan') ?? data_get($intentRow?->answer_json, 'plan');
-        $billingCycle = data_get($verifiedRow?->answer_json, 'billing_cycle')
-            ?? data_get($intentRow?->answer_json, 'billing_cycle')
-            ?? 'monthly';
-        $planStr = is_string($plan) ? $plan : null;
-        $cycleStr = is_string($billingCycle) ? $billingCycle : 'monthly';
-        $billingSkipped = $session->status === 'completed'
-            && ! $checkoutVerified
-            && ! $user->subscribed('default');
+        $missing = GuidedProfileSetup::missingQuestions($profile);
 
         return Inertia::render('onboarding', [
-            'sessionUuid' => $session->session_uuid,
-            'sessionId' => $session->id,
-            'initialStep' => max(1, min(5, $lastStepKey)),
-            'needsAgeGate' => $needsAgeGate,
-            'checkoutVerified' => $checkoutVerified,
-            'billingSkipped' => $billingSkipped,
-            'checkoutCancelled' => $request->query('checkout') === 'cancel',
-            'selectedBilling' => [
-                'plan' => $planStr,
-                'billing_cycle' => $cycleStr,
-                'label' => $this->billingPlanLabel($planStr, $cycleStr),
+            'steps' => $steps,
+            'current' => $current,
+            'consent' => [
+                'done' => $consented,
+                'ageRange' => $profile->age_range,
+                'ageRanges' => self::AGE_RANGES,
             ],
-            'profile' => [
-                'age_range' => $profile->age_range,
-                'is_age_13_or_older_confirmed' => $profile->is_age_13_or_older_confirmed,
-            ],
-            'responses' => $responses->map(fn (OnboardingResponse $r) => [
-                'answer_text' => $r->answer_text,
-                'answer_json' => $r->answer_json,
-            ]),
-            'hasActiveSubscription' => $user->subscribed('default'),
-            'maxProfileWords' => config('admissions.max_profile_words'),
-            'trial_only_mode' => (bool) config('billing.trial_only_mode', false),
+            'revision' => (int) ($profile->revision ?? 0),
+            'readiness' => GuidedOnboarding::readiness($profile),
+            'missing' => $missing,
+            'missingFields' => GuidedProfileSetup::fields($profile, array_values(array_unique(array_merge([], ...array_column($missing, 'keys'))))),
+            'summary' => GuidedProfileSetup::summary($profile),
+            'documents' => $this->documents($user),
+            'kinds' => Document::KINDS,
+            'maxUploadMb' => intdiv(self::MAX_UPLOAD_KB, 1024),
+            'ocrAvailable' => $extractor->ocrAvailable(),
+            'billing' => $billing,
         ]);
     }
 
-    public function refreshForOnboarding(Request $request): RedirectResponse
-    {
-        return redirect()->route('onboarding');
-    }
-
     /**
-     * Run the "No Cap" admissions read with structured JSON (OpenAI gpt-5-nano).
-     *
-     * Laravel AI does not support streaming structured output; this returns one JSON payload for charts + chips + markdown.
+     * Age range and acceptance of the terms; required before anything else is saved.
      */
-    public function admissionsRead(Request $request): JsonResponse
-    {
-        $user = $request->user();
-        if ($user->onboarded) {
-            abort(403);
-        }
-
-        $session = OnboardingSession::query()
-            ->where('user_id', $user->id)
-            ->where('status', 'in_progress')
-            ->latest('id')
-            ->first();
-
-        if (! $session) {
-            abort(404, 'No active onboarding session.');
-        }
-
-        $profileRow = OnboardingResponse::query()
-            ->where('user_id', $user->id)
-            ->where('onboarding_session_id', $session->id)
-            ->where('question_key', 'profile.freeform_text')
-            ->first();
-
-        $paste = $profileRow?->answer_text;
-        if ($paste === null || trim($paste) === '') {
-            abort(404, 'Add your profile on the previous step first.');
-        }
-
-        $sourceProfileHash = sha1(trim($paste));
-
-        $existingReport = OnboardingResponse::query()
-            ->where('user_id', $user->id)
-            ->where('onboarding_session_id', $session->id)
-            ->where('question_key', 'report.no_cap_markdown')
-            ->first();
-
-        $cachedStructured = data_get($existingReport?->answer_json, 'structured');
-        $cachedProfileHash = data_get($existingReport?->answer_json, 'source_profile_hash');
-
-        if (is_array($cachedStructured) && is_string($cachedProfileHash) && hash_equals($cachedProfileHash, $sourceProfileHash)) {
-            return response()->json(['report' => $cachedStructured]);
-        }
-
-        $prompt = "Student profile paste:\n\n---\n{$paste}\n---\n\nProduce the structured admissions read now.";
-
-        try {
-            $aiResponse = NoCapAgent::make()->prompt($prompt);
-
-            if (! $aiResponse instanceof StructuredAgentResponse) {
-                report(new \RuntimeException('NoCapAgent returned non-structured response.'));
-
-                return response()->json([
-                    'message' => 'Admissions read could not be generated.',
-                ], 500);
-            }
-
-            $structured = $aiResponse->structured;
-
-            OnboardingResponse::updateOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'onboarding_session_id' => $session->id,
-                    'question_key' => 'report.no_cap_markdown',
-                ],
-                [
-                    'step_key' => 'report',
-                    'source' => 'chat',
-                    'answer_text' => $structured['headline'] ?? '',
-                    'answer_json' => [
-                        'agent' => 'no_cap',
-                        'model' => 'gpt-5-nano',
-                        'source_profile_hash' => $sourceProfileHash,
-                        'structured' => $structured,
-                    ],
-                ]
-            );
-
-            return response()->json(['report' => $structured]);
-        } catch (Throwable $e) {
-            report($e);
-
-            return response()->json([
-                'message' => 'Admissions read could not be started. Check your AI provider configuration.',
-            ], 503);
-        }
-    }
-
-    public function saveStep(SaveStepRequest $request): RedirectResponse
+    public function consent(Request $request): RedirectResponse
     {
         $user = $request->user();
         if ($user->onboarded) {
             return redirect()->route('dashboard');
         }
 
-        $validated = $request->validated();
-        $step = (int) $validated['step'];
+        $validated = $request->validate([
+            'age_range' => ['required', Rule::in(array_keys(self::AGE_RANGES))],
+            'legal_accepted' => ['required', 'accepted'],
+        ]);
 
-        $profile = OnboardingProfile::firstOrCreate(
-            ['user_id' => $user->id],
-            ['status' => 'draft']
-        );
-
-        $session = $this->resolveInProgressSession($user->id);
-
-        DB::transaction(function () use ($user, $session, $profile, $validated, $step): void {
-            if ($session->started_at === null) {
-                $session->update(['started_at' => now()]);
-            }
-
-            match ($step) {
-                0 => $this->persistStep0($profile, $session, $validated),
-                1 => $session->update(['last_step_key' => '2']),
-                2 => $this->persistStep2($user, $session, $validated),
-                3 => $this->persistStep3($user, $session, $validated),
-                4 => $this->persistStep4($user, $session),
-                default => null,
-            };
-        });
-
-        return redirect()->route('onboarding');
-    }
-
-    /**
-     * @param  array<string, mixed>  $validated
-     */
-    private function persistStep0(OnboardingProfile $profile, OnboardingSession $session, array $validated): void
-    {
+        $profile = OnboardingProfile::firstOrCreate(['user_id' => $user->id], ['status' => 'draft']);
         $profile->update([
             'age_range' => $validated['age_range'],
             'is_age_13_or_older_confirmed' => true,
             'legal_accepted_at' => now(),
             'legal_accepted_version' => config('legal.documents_version'),
         ]);
-        $session->update(['last_step_key' => '1', 'started_step_key' => '1']);
+
+        $session = $this->resolveInProgressSession($user->id);
+        $session->update([
+            'started_at' => $session->started_at ?? now(),
+            'started_step_key' => $session->started_step_key ?? 'consent',
+            'last_step_key' => 'situation',
+        ]);
+
+        return redirect()->route('onboarding');
     }
 
     /**
-     * @param  array<string, mixed>  $validated
+     * Save one guided section and move to the next.
      */
-    private function persistStep2(User $user, OnboardingSession $session, array $validated): void
+    public function saveSection(Request $request, string $section, GuidedProfileSetup $setup): RedirectResponse
     {
-        OnboardingResponse::updateOrCreate(
-            [
-                'user_id' => $user->id,
-                'onboarding_session_id' => $session->id,
-                'question_key' => 'profile.freeform_text',
-            ],
-            [
-                'step_key' => 'profile',
-                'source' => 'freeform_paste',
-                'answer_text' => $validated['profile_text'],
-                'answer_json' => null,
-            ]
-        );
-        $session->update(['last_step_key' => '3']);
-    }
-
-    /**
-     * @param  array<string, mixed>  $validated
-     */
-    private function persistStep3(User $user, OnboardingSession $session, array $validated): void
-    {
-        if (array_key_exists('report_acknowledged', $validated)) {
-            OnboardingResponse::updateOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'onboarding_session_id' => $session->id,
-                    'question_key' => 'report.acknowledged',
-                ],
-                [
-                    'step_key' => 'report',
-                    'source' => 'form',
-                    'answer_text' => $validated['report_acknowledged'] ? '1' : '0',
-                    'answer_json' => ['acknowledged' => (bool) $validated['report_acknowledged']],
-                ]
-            );
+        abort_unless(isset(GuidedOnboarding::SECTIONS[$section]), 404);
+        $user = $request->user();
+        if ($user->onboarded) {
+            return redirect()->route('dashboard');
         }
-        $session->update(['last_step_key' => '4']);
+        if (! $this->consented(OnboardingProfile::query()->where('user_id', $user->id)->first())) {
+            return redirect()->route('onboarding');
+        }
+
+        $keys = GuidedOnboarding::SECTIONS[$section]['keys'];
+        GuidedProfileSetup::normaliseLists($request, $keys);
+        $validated = $request->validate(GuidedProfileSetup::rules($keys));
+
+        $setup->save($user, $keys, $request, $validated, "onboarding.{$section}", $section);
+
+        $next = GuidedOnboarding::state(OnboardingProfile::query()->where('user_id', $user->id)->first())['current'];
+        $this->resolveInProgressSession($user->id)->update(['last_step_key' => $next]);
+
+        return redirect()->route('onboarding', ['step' => $next]);
     }
 
-    private function persistStep4(User $user, OnboardingSession $session): void
+    /**
+     * Answers to the targeted questions on the review step.
+     */
+    public function saveAnswers(Request $request, GuidedProfileSetup $setup): RedirectResponse
     {
-        $billingOk = $user->subscribed('default')
-            || OnboardingResponse::query()
-                ->where('onboarding_session_id', $session->id)
-                ->where('question_key', 'billing.checkout_verified')
-                ->exists();
+        $user = $request->user();
+        if ($user->onboarded) {
+            return redirect()->route('dashboard');
+        }
 
-        $session->update(['last_step_key' => '5']);
+        $keys = array_values(array_intersect(GuidedProfileSetup::allKeys(), (array) $request->input('keys', [])));
+        abort_if($keys === [], 422, 'No answers to save.');
+
+        GuidedProfileSetup::normaliseLists($request, $keys);
+        $validated = $request->validate(GuidedProfileSetup::rules($keys));
+
+        $setup->save($user, $keys, $request, $validated, 'onboarding.review');
+
+        return redirect()->route('onboarding', ['step' => 'review']);
+    }
+
+    /**
+     * Upload a transcript or test report during onboarding. It goes through the normal document pipeline
+     * (private storage, versioning, reading in the background); values read from it wait for the student's
+     * review on the Documents page and are never saved to the profile automatically.
+     */
+    public function uploadDocument(Request $request, DocumentService $documents): RedirectResponse
+    {
+        $user = $request->user();
+        if ($user->onboarded) {
+            return redirect()->route('dashboard');
+        }
+
+        $validated = $request->validate([
+            'file' => ['required', File::types(['pdf', 'docx', 'txt', 'png', 'jpg', 'jpeg'])->max(self::MAX_UPLOAD_KB)],
+            'kind' => ['required', Rule::in(array_keys(Document::KINDS))],
+        ]);
+
+        $documents->upload($user, $request->file('file'), $validated['kind'], null, null, ChangeSource::studentManual($user, 'onboarding.documents'));
+
+        return redirect()->route('onboarding', ['step' => 'documents']);
     }
 
     public function skipBilling(Request $request): RedirectResponse
@@ -317,25 +224,12 @@ class OnboardingController extends Controller
             return redirect()->route('dashboard');
         }
 
-        $session = $this->resolveInProgressSession($user->id);
-
-        $hasProfileText = OnboardingResponse::query()
-            ->where('onboarding_session_id', $session->id)
-            ->where('question_key', 'profile.freeform_text')
-            ->whereNotNull('answer_text')
-            ->where('answer_text', '!=', '')
-            ->exists();
-
-        if (! $hasProfileText) {
-            return back()->withErrors([
-                'onboarding' => 'Please complete your profile text before skipping billing.',
-            ]);
-        }
-
         $profile = OnboardingProfile::query()->where('user_id', $user->id)->first();
-        if ($profile) {
-            $profile->update(['status' => 'completed']);
+        if (! $this->consented($profile)) {
+            return back()->withErrors(['onboarding' => 'Confirm your age range and the terms first.']);
         }
+
+        $session = $this->resolveInProgressSession($user->id);
 
         OnboardingResponse::updateOrCreate(
             [
@@ -351,28 +245,9 @@ class OnboardingController extends Controller
             ],
         );
 
-        $session->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-            'last_step_key' => '5',
-        ]);
-
-        $user->forceFill(['onboarded' => true])->save();
-
-        BuildUserAiContextJob::dispatch($user->id, false);
+        $this->finish($user, $profile, $session);
 
         return redirect()->route('dashboard');
-    }
-
-    private function billingPlanLabel(?string $plan, string $billingCycle): string
-    {
-        return match ($plan) {
-            'trial' => '$1 Trial (3 days)',
-            'sprint' => 'Admissions Sprint',
-            'boost' => 'Boost Pack',
-            'pro' => $billingCycle === 'annual' ? 'Pro (annual)' : 'Pro (monthly)',
-            default => 'Selected plan',
-        };
     }
 
     /**
@@ -415,8 +290,8 @@ class OnboardingController extends Controller
             ]
         );
 
-        $successUrl = route('onboarding').'?checkout=success&session_id={CHECKOUT_SESSION_ID}';
-        $cancelUrl = route('onboarding').'?checkout=cancel';
+        $successUrl = route('onboarding').'?step=plan&checkout=success&session_id={CHECKOUT_SESSION_ID}';
+        $cancelUrl = route('onboarding').'?step=plan&checkout=cancel';
 
         $checkoutOptions = [
             'success_url' => $successUrl,
@@ -443,37 +318,107 @@ class OnboardingController extends Controller
             return redirect()->route('dashboard');
         }
 
-        $session = $this->resolveInProgressSession($user->id);
-
-        $hasProfileText = OnboardingResponse::query()
-            ->where('onboarding_session_id', $session->id)
-            ->where('question_key', 'profile.freeform_text')
-            ->whereNotNull('answer_text')
-            ->where('answer_text', '!=', '')
-            ->exists();
-
-        if (! $hasProfileText) {
-            return back()->withErrors([
-                'onboarding' => 'Please complete your profile text before finishing.',
-            ]);
-        }
-
         $profile = OnboardingProfile::query()->where('user_id', $user->id)->first();
-        if ($profile) {
-            $profile->update(['status' => 'completed']);
+        if (! $this->consented($profile)) {
+            return back()->withErrors(['onboarding' => 'Confirm your age range and the terms first.']);
         }
+
+        $this->finish($user, $profile, $this->resolveInProgressSession($user->id));
+
+        return redirect()->route('dashboard');
+    }
+
+    private function finish(User $user, ?OnboardingProfile $profile, OnboardingSession $session): void
+    {
+        $profile?->update(['status' => 'completed']);
 
         $session->update([
             'status' => 'completed',
             'completed_at' => now(),
-            'last_step_key' => '5',
+            'last_step_key' => 'review',
         ]);
 
         $user->forceFill(['onboarded' => true])->save();
 
         BuildUserAiContextJob::dispatch($user->id, false);
+    }
 
-        return redirect()->route('dashboard');
+    private function consented(?OnboardingProfile $profile): bool
+    {
+        return (bool) ($profile?->is_age_13_or_older_confirmed) && $profile?->legal_accepted_at !== null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function documents(User $user): array
+    {
+        $pending = StudentFact::query()
+            ->where('user_id', $user->getKey())
+            ->where('review_state', StudentFact::REVIEW_PENDING)
+            ->get(['source_ref'])
+            ->countBy(fn (StudentFact $fact) => $fact->source_ref['document_id'] ?? '');
+
+        return Document::query()
+            ->where('user_id', $user->getKey())
+            ->with('currentVersion')
+            ->latest('updated_at')
+            ->get()
+            ->map(fn (Document $document) => [
+                'id' => (string) $document->id,
+                'title' => $document->title,
+                'name' => $document->currentVersion?->original_name ?? $document->title,
+                'kindLabel' => Document::KINDS[$document->kind] ?? $document->kind,
+                'status' => $document->currentVersion?->status->value,
+                'statusLabel' => $document->currentVersion?->status->label(),
+                'failureReason' => $document->currentVersion?->failure_reason,
+                'pendingValues' => (int) ($pending[$document->id] ?? 0),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Whether the plan step applies, and what it can offer (only plans with a configured Stripe price).
+     *
+     * @return array<string, mixed>
+     */
+    private function billingState(User $user, OnboardingSession $session, Request $request): array
+    {
+        $enforced = (bool) config('billing.enforcement.enabled', true);
+        $hasAccess = PlatformAccess::hasFullAccess($user);
+        $verified = OnboardingResponse::query()
+            ->where('onboarding_session_id', $session->id)
+            ->where('question_key', 'billing.checkout_verified')
+            ->exists();
+        $trialOnly = (bool) config('billing.trial_only_mode', false);
+        $prices = (array) config('billing.prices', []);
+        $catalog = (array) config('billing.plan_catalog', []);
+        $passes = (array) config('billing.pass_display', []);
+        $configured = fn (string $key) => is_string($prices[$key] ?? null) && $prices[$key] !== '';
+
+        $plans = [[
+            'plan' => 'trial',
+            'cycle' => 'monthly',
+            'headline' => '$1 trial',
+            'priceLine' => ((int) config('billing.purchase_access_days.trial', 3)).' days of full access',
+            'badge' => 'Start here',
+            'configured' => $configured('trial'),
+        ]];
+        if (! $trialOnly) {
+            $plans[] = ['plan' => 'sprint', 'cycle' => 'monthly', 'headline' => (string) ($passes['sprint']['headline'] ?? 'Admissions sprint'), 'priceLine' => (string) ($passes['sprint']['price_line'] ?? '90-day access'), 'badge' => null, 'configured' => $configured('sprint')];
+            $plans[] = ['plan' => 'pro', 'cycle' => 'monthly', 'headline' => 'Pro · monthly', 'priceLine' => (string) ($catalog['pro_monthly']['price_line'] ?? ''), 'badge' => null, 'configured' => $configured('pro_monthly')];
+            $plans[] = ['plan' => 'pro', 'cycle' => 'annual', 'headline' => 'Pro · yearly', 'priceLine' => (string) ($catalog['pro_annual']['price_line'] ?? ''), 'badge' => $catalog['pro_annual']['badge'] ?? null, 'configured' => $configured('pro_annual')];
+        }
+
+        return [
+            'needed' => $enforced && (! $hasAccess || $verified),
+            'has_access' => $hasAccess,
+            'checkout_verified' => $verified,
+            'cancelled' => $request->query('checkout') === 'cancel',
+            'trial_only' => $trialOnly,
+            'plans' => $plans,
+        ];
     }
 
     private function resolveInProgressSession(int $userId): OnboardingSession
@@ -484,15 +429,11 @@ class OnboardingController extends Controller
             ->latest('id')
             ->first();
 
-        if (! $session) {
-            return OnboardingSession::create([
-                'user_id' => $userId,
-                'session_uuid' => (string) Str::uuid(),
-                'status' => 'in_progress',
-            ]);
-        }
-
-        return $session;
+        return $session ?? OnboardingSession::create([
+            'user_id' => $userId,
+            'session_uuid' => (string) Str::uuid(),
+            'status' => 'in_progress',
+        ]);
     }
 
     private function resolveStripePriceId(string $plan, string $billingCycle): ?string

@@ -223,18 +223,11 @@ class ProviderCallbackController extends Controller
                 $socialUser = Socialite::driver($provider)->user();
             }
 
-            // DEBUG: Log all received data
+            // Never log OAuth tokens or the provider's raw profile (Phase 11: secrets stay out of logs).
             Log::debug('Socialite user data', [
                 'provider' => $provider,
-                'user_data' => [
-                    'id' => $socialUser->getId(),
-                    'name' => $socialUser->getName(),
-                    'email' => $socialUser->getEmail(),
-                    'avatar' => $socialUser->getAvatar(),
-                    'token' => $socialUser->token,
-                    'refreshToken' => $socialUser->refreshToken,
-                    'raw' => $socialUser->user,
-                ],
+                'has_id' => filled($socialUser->getId()),
+                'has_email' => filled($socialUser->getEmail()),
             ]);
 
             // Validate social user data (removed name requirement)

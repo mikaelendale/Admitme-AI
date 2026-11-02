@@ -1,0 +1,398 @@
+:root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1d1d1f;
+    --muted: #6b6b72;
+    --line: #e3e3e8;
+    --card: #f7f7f9;
+    --accent: #2f5bd3;
+    --accent-fg: #ffffff;
+    --danger: #b42318;
+    --ok: #1f7a4d;
+    --warn: #9a5b00;
+    font-family:
+        system-ui,
+        -apple-system,
+        'Segoe UI',
+        sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #16161a;
+        --fg: #ececf1;
+        --muted: #a1a1aa;
+        --line: #2c2c33;
+        --card: #1f1f25;
+        --accent: #7c9cff;
+        --accent-fg: #0b0b0f;
+        --danger: #ff8a80;
+        --ok: #6fd3a0;
+        --warn: #f0b45a;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    /* Chrome gives extension pages body { font-size: 75%; font-family: … }: use the :root font instead. */
+    font: inherit;
+}
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    max-width: 520px;
+}
+
+h1 {
+    margin: 0 0 4px;
+    font-size: 17px;
+}
+
+h2 {
+    margin: 0;
+    font-size: 15px;
+}
+
+p {
+    margin: 0;
+}
+
+.muted {
+    color: var(--muted);
+    font-size: 12.5px;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+input,
+select {
+    font: inherit;
+    font-weight: 400;
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+button {
+    font: inherit;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--fg);
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+}
+
+.text-button {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    text-decoration: underline;
+    align-self: flex-start;
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.notice {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    font-size: 12.5px;
+}
+
+.error {
+    color: var(--danger);
+    font-size: 12.5px;
+}
+
+.card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--card);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.card .title {
+    font-weight: 600;
+}
+
+.status {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.status.pending {
+    color: var(--warn);
+}
+
+.status.applied {
+    color: var(--ok);
+}
+
+.status.stale,
+.status.failed {
+    color: var(--danger);
+}
+
+ul.items,
+ul.steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+ul.items li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+ul.steps li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 8px;
+    font-size: 12.5px;
+}
+
+small {
+    display: block;
+    color: var(--muted);
+    font-size: 11.5px;
+}
+
+.badge {
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.badge.completed {
+    color: var(--ok);
+}
+
+.badge.frozen,
+.badge.failed,
+.badge.stale {
+    color: var(--danger);
+}
+
+footer {
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+}
+
+/* Mentor control ------------------------------------------------------------------------------------- */
+
+button.wide {
+    width: 100%;
+    padding: 10px 12px;
+    font-weight: 600;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.divider::before,
+.divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid var(--line);
+}
+
+.control-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.control-head .grow {
+    flex: 1;
+    min-width: 0;
+}
+
+.host {
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.host .text-button {
+    font-size: inherit;
+}
+
+.live-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+    animation: live 2s ease-out infinite;
+}
+
+@keyframes live {
+    0% {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 45%, transparent);
+    }
+
+    70%,
+    100% {
+        box-shadow: 0 0 0 7px color-mix(in srgb, var(--ok) 0%, transparent);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-dot {
+        animation: none;
+    }
+}
+
+button.stop {
+    flex: none;
+    border-color: var(--danger);
+    background: var(--bg);
+    color: var(--danger);
+    font-weight: 600;
+    padding: 6px 16px;
+}
+
+button.stop:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 8%, var(--bg));
+}
+
+.card.confirm {
+    border-color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 9%, var(--card));
+    gap: 8px;
+}
+
+.card.confirm .row {
+    align-items: center;
+}
+
+.card.confirm .row .text-button {
+    align-self: center;
+}
+
+.notice.wait {
+    border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
+}
+
+.row-between {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.activity-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.activity-head .muted {
+    text-align: right;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+ol.activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+ol.activity li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+}
+
+ol.activity time {
+    color: var(--muted);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    padding-top: 1px;
+    white-space: nowrap;
+}
+
+ol.activity li.ok span {
+    color: var(--fg);
+}
+
+ol.activity li.info span {
+    color: var(--muted);
+}
+
+ol.activity li.warn span {
+    color: var(--warn);
+}
+
+ol.activity li.error span {
+    color: var(--danger);
+}

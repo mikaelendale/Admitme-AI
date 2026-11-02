@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Ai\Agents\NoCapAgent;
 use App\Ai\Agents\ProfilePasteExtractionAgent;
+use App\Domain\Shared\ChangeSource;
+use App\Domain\Students\StudentFieldRegistry;
+use App\Domain\Students\StudentProfileService;
 use App\Models\OnboardingProfile;
 use App\Services\Ai\AiContextService;
 use App\Services\Billing\ProfileResumePdfImportLimiter;
@@ -99,25 +102,9 @@ class ProfileCompletionController extends Controller
         );
     }
 
-    public function updateClarify(Request $request, GpaNormalizer $gpaNormalizer, ProfileCompletenessCalculator $completeness, ProfileModesResolver $modesResolver): RedirectResponse
+    public function updateClarify(Request $request, StudentProfileService $profiles): RedirectResponse
     {
-        $request->validate([
-            'current_grade' => ['nullable', 'string', 'max:32'],
-            'gpa_value' => ['nullable', 'string', 'max:16'],
-            'gpa_scale' => ['nullable', 'string', 'max:16'],
-            'gpa_type' => ['nullable', Rule::in(['weighted', 'unweighted'])],
-            'curriculum' => ['nullable', 'string', 'max:64'],
-            'sat_score' => ['nullable', 'integer', 'min:400', 'max:1600'],
-            'act_score' => ['nullable', 'integer', 'min:1', 'max:36'],
-            'test_optional_status' => ['nullable', 'string', 'max:32'],
-            'citizenship_residency' => ['nullable', 'string', 'max:64'],
-            'location_country' => ['nullable', 'string', 'max:120'],
-            'location_region' => ['nullable', 'string', 'max:120'],
-        ]);
-
-        $profile = $this->requireProfile($request);
-
-        $profile->fill($request->only([
+        $keys = [
             'current_grade',
             'gpa_value',
             'gpa_scale',
@@ -129,84 +116,69 @@ class ProfileCompletionController extends Controller
             'citizenship_residency',
             'location_country',
             'location_region',
-        ]));
+        ];
 
-        $this->applyGpaNormalization($profile, $gpaNormalizer);
+        $request->validate(StudentFieldRegistry::rules($keys) + self::revisionRule());
 
-        $calc = $completeness->calculate($profile);
-        $profile->profile_completeness_score = $calc['score'];
-        $profile->completeness_callouts_json = $calc['callouts'];
-        $profile->profile_modes_json = $modesResolver->resolve($profile);
-        $profile->profile_completion_state = $this->mergeCompletionState($profile, 2);
-        $profile->save();
+        $this->saveProfileStep($request, $profiles, $request->only($keys), 2, 'profile-completion.clarify');
 
         return redirect()->route('profile-overview')->with('status', 'profile-clarify-saved');
     }
 
-    public function updateGoals(Request $request, ProfileCompletenessCalculator $completeness, ProfileModesResolver $modesResolver): RedirectResponse
+    public function updateGoals(Request $request, StudentProfileService $profiles): RedirectResponse
     {
-        $validated = $request->validate([
-            'dream_schools' => ['nullable', 'array', 'max:5'],
-            'dream_schools.*' => ['string', 'max:200'],
-            'intended_majors' => ['nullable', 'array', 'max:3'],
-            'intended_majors.*' => ['string', 'max:120'],
-            'region_preferences' => ['nullable', 'array'],
-            'region_preferences.*' => ['string', 'max:64'],
-            'campus_size_pref' => ['nullable', 'string', 'max:32'],
-            'financial_aid_need_percent' => ['nullable', 'integer', 'min:0', 'max:100'],
-        ]);
+        $keys = ['dream_schools', 'intended_majors', 'region_preferences', 'campus_size_pref', 'financial_aid_need_percent'];
 
-        $profile = $this->requireProfile($request);
+        $validated = $request->validate(StudentFieldRegistry::rules($keys) + self::revisionRule());
 
-        $profile->dream_schools_json = array_values(array_filter(
-            $validated['dream_schools'] ?? [],
-            fn ($s) => is_string($s) && trim($s) !== '',
-        ));
-        $profile->intended_majors_json = array_values(array_filter(
-            $validated['intended_majors'] ?? [],
-            fn ($s) => is_string($s) && trim($s) !== '',
-        ));
-        $profile->region_preferences_json = array_values(array_filter(
-            $validated['region_preferences'] ?? [],
-            fn ($s) => is_string($s) && trim($s) !== '',
-        ));
-        $profile->campus_size_pref = $validated['campus_size_pref'] ?? null;
-        $profile->financial_aid_need_percent = $validated['financial_aid_need_percent'] ?? null;
+        // This form always submits the whole step, so a missing field means "cleared"...
+        $changes = [];
+        foreach ($keys as $key) {
+            $changes[$key] = $validated[$key] ?? null;
+        }
 
-        $calc = $completeness->calculate($profile);
-        $profile->profile_completeness_score = $calc['score'];
-        $profile->completeness_callouts_json = $calc['callouts'];
-        $profile->profile_modes_json = $modesResolver->resolve($profile);
-        $profile->profile_completion_state = $this->mergeCompletionState($profile, 3);
-        $profile->save();
+        $this->saveProfileStep($request, $profiles, $changes, 3, 'profile-completion.goals');
 
         return redirect()->route('profile-overview')->with('status', 'profile-goals-saved');
     }
 
-    public function updateReview(Request $request, ProfileCompletenessCalculator $completeness, ProfileModesResolver $modesResolver): RedirectResponse
+    public function updateReview(Request $request, StudentProfileService $profiles): RedirectResponse
     {
-        $validated = $request->validate([
-            'student_summary' => ['nullable', 'string', 'max:65535'],
-            'spike_summary' => ['nullable', 'string', 'max:2000'],
-        ]);
+        $keys = ['student_summary', 'spike_summary'];
 
-        $profile = $this->requireProfile($request);
+        $request->validate(StudentFieldRegistry::rules($keys) + self::revisionRule());
 
-        if (array_key_exists('student_summary', $validated)) {
-            $profile->student_summary = $validated['student_summary'];
-        }
-        if (array_key_exists('spike_summary', $validated)) {
-            $profile->spike_summary = $validated['spike_summary'];
-        }
-
-        $calc = $completeness->calculate($profile);
-        $profile->profile_completeness_score = $calc['score'];
-        $profile->completeness_callouts_json = $calc['callouts'];
-        $profile->profile_modes_json = $modesResolver->resolve($profile);
-        $profile->profile_completion_state = $this->mergeCompletionState($profile, 4);
-        $profile->save();
+        $this->saveProfileStep($request, $profiles, $request->only($keys), 4, 'profile-completion.review');
 
         return redirect()->route('profile-overview')->with('status', 'profile-review-saved');
+    }
+
+    /**
+     * Save one manual profile step through the shared profile service, marking the step complete.
+     *
+     * @param  array<string, mixed>  $changes
+     */
+    private function saveProfileStep(Request $request, StudentProfileService $profiles, array $changes, int $step, string $via): void
+    {
+        $user = $request->user();
+        $profile = $this->requireProfile($request);
+        $expectedRevision = $request->filled('expected_revision') ? $request->integer('expected_revision') : null;
+
+        $profiles->update(
+            $user,
+            $changes,
+            $expectedRevision,
+            ChangeSource::studentManual($user, $via),
+            ['profile_completion_state' => $this->mergeCompletionState($profile, $step)],
+        );
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private static function revisionRule(): array
+    {
+        return ['expected_revision' => ['sometimes', 'nullable', 'integer', 'min:1']];
     }
 
     public function updateMentor(Request $request): RedirectResponse

@@ -10,11 +10,17 @@ export type EssayRunPollJson = {
     completed_at?: string | null;
 };
 
-export async function fetchEssayRunJson(runId: string): Promise<EssayRunPollJson | null> {
+export async function fetchEssayRunJson(
+    runId: string,
+): Promise<EssayRunPollJson | null> {
     const res = await fetch(`/essay-suite/runs/${runId}`, {
         credentials: 'same-origin',
-        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
     });
+
     if (!res.ok) {
         return null;
     }

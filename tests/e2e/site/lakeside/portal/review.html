@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Step 3 of 3 · Review and submit · Synthetic Lakeside application</title>
+<style>body{font-family:system-ui,sans-serif;max-width:620px;margin:40px auto;padding:0 16px}dt{font-weight:600;margin-top:8px}button{margin-top:20px;padding:9px 16px}#form-alert{color:#b00020}</style>
+<script src="portal.js"></script></head>
+<body>
+<p id="who"></p>
+<h1>First-year application — Fall 2027</h1>
+<h2>Step 3 of 3: Review and submit</h2>
+<p role="alert" id="form-alert" hidden></p>
+<dl id="summary"></dl>
+<form id="submit-form">
+  <p><label><input type="checkbox" id="certify" name="certify" required> I certify that the information in this application is complete and accurate.</label></p>
+  <p><a href="step2.html">Back</a></p>
+  <button type="submit" id="submit">Submit application</button>
+</form>
+<p id="done" hidden><strong>Application submitted.</strong> (Practice portal — nothing was sent.)</p>
+<script>
+if (LakesidePortal.requireLogin()) {
+    var data = LakesidePortal.load();
+    var dl = document.getElementById('summary');
+    ['first_name', 'last_name', 'email', 'country', 'citizenship', 'phone', 'curriculum', 'graduation_year', 'major', 'aid'].forEach(function (key) {
+        var dt = document.createElement('dt');
+        dt.textContent = key.replace('_', ' ');
+        var dd = document.createElement('dd');
+        dd.textContent = data[key] || '—';
+        dl.append(dt, dd);
+    });
+    if (localStorage.getItem('lakeside_portal_submitted')) {
+        document.body.dataset.submitted = 'yes';
+        document.getElementById('done').hidden = false;
+    }
+    document.getElementById('submit-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!document.getElementById('certify').checked) {
+            var alert = document.getElementById('form-alert');
+            alert.textContent = 'Please confirm the certification before submitting.';
+            alert.hidden = false;
+            return;
+        }
+        localStorage.setItem('lakeside_portal_submitted', new Date().toISOString());
+        document.body.dataset.submitted = 'yes';
+        document.getElementById('done').hidden = false;
+    });
+}
+</script>
+</body></html>

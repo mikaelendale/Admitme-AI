@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use App\Domain\Applications\CollegeChoiceStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Str;
 
 class CollegeListSchool extends Model
 {
-    use HasUlids;
+    use HasFactory, HasUlids;
 
     public $incrementing = false;
 
@@ -45,6 +48,7 @@ class CollegeListSchool extends Model
         'ea_deadline',
         'ed_deadline',
         'rd_deadline',
+        'rolling_admission',
         'application_portal_url',
         'admissions_cycle_label',
         'aid_estimate_band',
@@ -57,6 +61,15 @@ class CollegeListSchool extends Model
         'student_notes',
         'student_metadata',
         'generated_at',
+        'choice_status',
+    ];
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'choice_status' => 'shortlisted',
+        'revision' => 1,
     ];
 
     /**
@@ -67,6 +80,7 @@ class CollegeListSchool extends Model
         return [
             'notable_programs' => 'array',
             'is_removed' => 'boolean',
+            'rolling_admission' => 'boolean',
             'generated_at' => 'datetime',
             'ea_deadline' => 'date',
             'ed_deadline' => 'date',
@@ -77,6 +91,8 @@ class CollegeListSchool extends Model
             'median_act' => 'integer',
             'fit_score' => 'integer',
             'student_metadata' => 'array',
+            'choice_status' => CollegeChoiceStatus::class,
+            'revision' => 'integer',
         ];
     }
 
@@ -111,5 +127,10 @@ class CollegeListSchool extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function application(): HasOne
+    {
+        return $this->hasOne(Application::class);
     }
 }

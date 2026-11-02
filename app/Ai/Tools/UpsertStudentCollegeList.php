@@ -2,6 +2,9 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Agents\AdmitMeGeneralAgent;
+use App\Domain\Applications\CollegeListService;
+use App\Domain\Shared\ChangeSource;
 use App\Models\CollegeListSchool;
 use App\Models\User;
 use Carbon\Carbon;
@@ -132,12 +135,11 @@ TXT;
             $attributes['admissions_cycle_label'] = $c;
         }
 
-        $row = CollegeListSchool::query()->updateOrCreate(
-            [
-                'user_id' => $this->user->id,
-                'school_slug' => $slug,
-            ],
+        $row = app(CollegeListService::class)->upsertFromAgentTool(
+            $this->user,
+            $slug,
             $attributes,
+            ChangeSource::agentTool(AdmitMeGeneralAgent::class, class_basename(self::class)),
         );
 
         $row->refresh();

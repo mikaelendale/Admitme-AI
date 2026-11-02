@@ -1,27 +1,52 @@
 'use client';
 
-import type { ChangeEvent } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Plus } from '@phosphor-icons/react';
+import {
+    ArrowLeft,
+    Buildings,
+    CaretRight,
+    FileText,
+    HandHeart,
+    Info,
+    Lightning,
+    Medal,
+    Plus,
+    TextAlignLeft,
+    UsersThree,
+} from '@phosphor-icons/react';
+import type { Icon } from '@phosphor-icons/react';
+import type { ChangeEvent } from 'react';
 import { useCallback, useMemo, useState } from 'react';
+import { EssayStrengthScores } from '@/components/essay/EssayStrengthScores';
+import type { EssaySchoolOption } from '@/components/essay-suite/run-types';
+import {
+    Field,
+    Optional,
+    PlanOverlay,
+    fieldClass,
+    selectTriggerClass,
+    textareaClass,
+} from '@/components/essay-suite/ui';
+import {
+    EmptyState,
+    IconTile,
+    Page,
+    PageHeader,
+    Section,
+    SegmentedTabs,
+    StatusBadge,
+} from '@/components/page/kit';
+import type { BadgeTone, Tone } from '@/components/page/kit';
 import { PaywallModal } from '@/components/paywall-modal';
 import { Button } from '@/components/ui/button';
 import {
-    Card,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
-import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
     Select,
     SelectContent,
@@ -29,16 +54,18 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { useHydrated } from '@/hooks/use-hydrated';
 import {
     buildLaravelJsonHeaders,
     readCsrfTokenFromMeta,
 } from '@/lib/laravelFetch';
-import type { EssaySchoolOption } from '@/components/essay-suite/run-types';
-import type { SupplementalEssayRow } from '@/types/essay';
-import { essaySuite } from '@/routes';
-import { EssayStrengthScores } from '@/components/essay/EssayStrengthScores';
-import type { EssayRoastScores, EssayScoreOnlyPayload } from '@/types/essay';
 import { cn } from '@/lib/utils';
+import { essaySuite } from '@/routes';
+import type {
+    EssayRoastScores,
+    EssayScoreOnlyPayload,
+    SupplementalEssayRow,
+} from '@/types/essay';
 
 type Group = {
     school_name: string;
@@ -61,6 +88,8 @@ type PageProps = {
     supplements_nav_badge_count: number;
 };
 
+type Filter = 'all' | 'not_started' | 'in_progress' | 'drafted' | 'final';
+
 const TYPE_LABEL: Record<string, string> = {
     why_school: 'Why school',
     activity: 'Activity',
@@ -71,21 +100,21 @@ const TYPE_LABEL: Record<string, string> = {
     other: 'Other',
 };
 
-const TYPE_CLASS: Record<string, string> = {
-    why_school: 'border-sky-500/40 bg-sky-500/10 text-sky-950 dark:text-sky-100',
-    activity: 'border-violet-500/40 bg-violet-500/10 text-violet-950 dark:text-violet-100',
-    diversity: 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-950 dark:text-fuchsia-100',
-    community: 'border-teal-500/40 bg-teal-500/10 text-teal-950 dark:text-teal-100',
-    additional_info: 'border-slate-500/40 bg-slate-500/10 text-slate-900 dark:text-slate-100',
-    short_answer: 'border-orange-500/40 bg-orange-500/10 text-orange-950 dark:text-orange-100',
-    other: 'border-border/60 bg-muted/40 text-muted-foreground',
+const TYPE_STYLE: Record<string, { icon: Icon; tone: Tone }> = {
+    why_school: { icon: Buildings, tone: 'sky' },
+    activity: { icon: Medal, tone: 'violet' },
+    diversity: { icon: UsersThree, tone: 'pink' },
+    community: { icon: HandHeart, tone: 'teal' },
+    additional_info: { icon: Info, tone: 'slate' },
+    short_answer: { icon: TextAlignLeft, tone: 'orange' },
+    other: { icon: FileText, tone: 'slate' },
 };
 
-const STATUS_CLASS: Record<string, string> = {
-    not_started: 'border-border/60 bg-muted/40 text-muted-foreground',
-    in_progress: 'border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100',
-    drafted: 'border-sky-600/40 bg-sky-600/10 text-sky-950 dark:text-sky-100',
-    final: 'border-emerald-600/40 bg-emerald-600/10 text-emerald-950 dark:text-emerald-100',
+const STATUS_TONE: Record<string, BadgeTone> = {
+    not_started: 'neutral',
+    in_progress: 'warning',
+    drafted: 'info',
+    final: 'success',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -105,14 +134,98 @@ function daysUntil(dateStr: string | null): number | null {
     if (!dateStr) {
         return null;
     }
+
     const d = new Date(dateStr + 'T12:00:00');
+
     if (Number.isNaN(d.getTime())) {
         return null;
     }
+
     const now = new Date();
     now.setHours(12, 0, 0, 0);
 
     return Math.ceil((d.getTime() - now.getTime()) / 86400000);
+}
+
+function SupplementRow({
+    row,
+    hydrated,
+    onOpen,
+}: {
+    row: SupplementalEssayRow;
+    hydrated: boolean;
+    onOpen: () => void;
+}) {
+    const style = TYPE_STYLE[row.essay_type] ?? TYPE_STYLE.other;
+    // "Today" depends on the reader's clock, so days left only appear after hydration.
+    const d = hydrated ? daysUntil(row.due_date) : null;
+    const urgent = d != null && d >= 0 && d < 7;
+    const due =
+        row.due_date && hydrated
+            ? new Date(row.due_date + 'T12:00:00').toLocaleDateString(
+                  undefined,
+                  { month: 'short', day: 'numeric', year: 'numeric' },
+              )
+            : row.due_date;
+
+    return (
+        <li>
+            <button
+                type="button"
+                onClick={onOpen}
+                className="flex w-full items-start gap-4 px-4 py-4 text-left transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-5"
+            >
+                <IconTile
+                    icon={style.icon}
+                    tone={style.tone}
+                    variant="glyph"
+                    className="mt-0.5"
+                />
+                <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-[15px] font-medium text-foreground">
+                            {TYPE_LABEL[row.essay_type] ?? row.essay_type}
+                        </span>
+                        <StatusBadge
+                            tone={STATUS_TONE[row.status] ?? 'neutral'}
+                        >
+                            {STATUS_LABEL[row.status] ?? row.status}
+                        </StatusBadge>
+                    </span>
+                    <span className="mt-1 line-clamp-2 block text-[13.5px] leading-snug text-muted-foreground">
+                        {row.prompt_text}
+                    </span>
+                    {row.word_limit != null || row.due_date ? (
+                        <span className="nums mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] text-muted-foreground">
+                            {row.word_limit != null ? (
+                                <span>Limit {row.word_limit} words</span>
+                            ) : null}
+                            {row.due_date ? (
+                                <span
+                                    className={cn(
+                                        urgent &&
+                                            'font-medium text-destructive',
+                                    )}
+                                >
+                                    Due {due}
+                                    {d != null && d >= 0
+                                        ? ` · ${d} day${d === 1 ? '' : 's'} left`
+                                        : ''}
+                                </span>
+                            ) : null}
+                        </span>
+                    ) : null}
+                </span>
+                <span className="mt-0.5 hidden shrink-0 text-[13px] font-medium text-muted-foreground sm:inline">
+                    Edit
+                </span>
+                <CaretRight
+                    className="mt-1 size-4 shrink-0 text-muted-foreground/60"
+                    aria-hidden
+                />
+            </button>
+        </li>
+    );
 }
 
 export default function EssaySupplementsPage() {
@@ -124,7 +237,8 @@ export default function EssaySupplementsPage() {
         isSubscribed = false,
     } = usePage<PageProps & { isSubscribed?: boolean }>().props;
 
-    const [filter, setFilter] = useState<string>('all');
+    const hydrated = useHydrated();
+    const [filter, setFilter] = useState<Filter>('all');
     const [editor, setEditor] = useState<SupplementalEssayRow | null>(null);
     const [editContent, setEditContent] = useState('');
     const [editStatus, setEditStatus] = useState('');
@@ -133,7 +247,9 @@ export default function EssaySupplementsPage() {
     const [editDue, setEditDue] = useState('');
     const [saving, setSaving] = useState(false);
     const [scoreBusy, setScoreBusy] = useState(false);
-    const [quickScore, setQuickScore] = useState<EssayScoreOnlyPayload | null>(null);
+    const [quickScore, setQuickScore] = useState<EssayScoreOnlyPayload | null>(
+        null,
+    );
 
     const [addOpen, setAddOpen] = useState(false);
     const [addSchoolId, setAddSchoolId] = useState<string>('');
@@ -172,7 +288,9 @@ export default function EssaySupplementsPage() {
         if (!editor) {
             return;
         }
+
         setSaving(true);
+
         try {
             const res = await fetch(`/essay-suite/supplements/${editor.id}`, {
                 method: 'PATCH',
@@ -182,15 +300,24 @@ export default function EssaySupplementsPage() {
                     content: editContent,
                     status: editStatus,
                     notes: editNotes,
-                    word_limit: editWordLimit === '' ? null : Number(editWordLimit),
+                    word_limit:
+                        editWordLimit === '' ? null : Number(editWordLimit),
                     due_date: editDue === '' ? null : editDue,
                 }),
             });
+
             if (!res.ok) {
                 return;
             }
+
             setEditor(null);
-            router.reload({ only: ['supplement_groups', 'supplements_flat', 'supplements_summary'] });
+            router.reload({
+                only: [
+                    'supplement_groups',
+                    'supplements_flat',
+                    'supplements_summary',
+                ],
+            });
         } finally {
             setSaving(false);
         }
@@ -200,8 +327,10 @@ export default function EssaySupplementsPage() {
         if (!editContent.trim() || editContent.trim().length < 100) {
             return;
         }
+
         setScoreBusy(true);
         setQuickScore(null);
+
         try {
             const res = await fetch('/essay-suite/score-only', {
                 method: 'POST',
@@ -209,7 +338,10 @@ export default function EssaySupplementsPage() {
                 headers: buildLaravelJsonHeaders(readCsrfTokenFromMeta()),
                 body: JSON.stringify({ essay_text: editContent }),
             });
-            const data = (await res.json()) as { payload?: EssayScoreOnlyPayload };
+            const data = (await res.json()) as {
+                payload?: EssayScoreOnlyPayload;
+            };
+
             if (res.ok && data.payload) {
                 setQuickScore(data.payload);
             }
@@ -221,11 +353,14 @@ export default function EssaySupplementsPage() {
     const createSupplement = useCallback(async () => {
         const name =
             addSchoolId !== ''
-                ? (active_schools.find((s) => s.id === addSchoolId)?.name ?? addSchoolName)
+                ? (active_schools.find((s) => s.id === addSchoolId)?.name ??
+                  addSchoolName)
                 : addSchoolName.trim();
+
         if (name === '' || addPrompt.trim().length < 10) {
             return;
         }
+
         const res = await fetch('/essay-suite/supplements', {
             method: 'POST',
             credentials: 'same-origin',
@@ -240,12 +375,19 @@ export default function EssaySupplementsPage() {
                 due_date: addDue === '' ? null : addDue,
             }),
         });
+
         if (res.ok) {
             setAddOpen(false);
             setAddPrompt('');
             setAddDue('');
             setAddLimit('');
-            router.reload({ only: ['supplement_groups', 'supplements_flat', 'supplements_summary'] });
+            router.reload({
+                only: [
+                    'supplement_groups',
+                    'supplements_flat',
+                    'supplements_summary',
+                ],
+            });
         }
     }, [
         active_schools,
@@ -262,183 +404,189 @@ export default function EssaySupplementsPage() {
     const limit = editWordLimit === '' ? null : Number(editWordLimit);
     const overPct = limit != null && limit > 0 ? wc / limit : 0;
     const wcColor =
-        limit != null && wc > limit ? 'text-destructive' : overPct >= 0.8 ? 'text-amber-700 dark:text-amber-200' : '';
+        limit != null && wc > limit
+            ? 'text-destructive'
+            : overPct >= 0.8
+              ? 'text-amber-700 dark:text-amber-200'
+              : 'text-muted-foreground';
 
     const empty = supplements_summary.total === 0;
+
+    const filters: { value: Filter; label: string; count: number }[] = [
+        { value: 'all', label: 'All', count: supplements_summary.total },
+        {
+            value: 'not_started',
+            label: 'Not started',
+            count: supplements_summary.not_started,
+        },
+        {
+            value: 'in_progress',
+            label: 'In progress',
+            count: supplements_summary.in_progress,
+        },
+        {
+            value: 'drafted',
+            label: 'Drafted',
+            count: supplements_summary.drafted,
+        },
+        { value: 'final', label: 'Final', count: supplements_summary.final },
+    ];
 
     return (
         <>
             <Head title="Supplements" />
 
-            <div className="page-shell relative">
+            <div className="relative">
                 <div
-                    className={cn(!isSubscribed && 'pointer-events-none select-none blur-sm')}
+                    className={cn(
+                        !isSubscribed &&
+                            'pointer-events-none blur-sm select-none',
+                    )}
+                    inert={!isSubscribed}
                 >
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                            Supplemental essays
-                        </h1>
-                        <p className="max-w-2xl text-sm text-muted-foreground">
-                            Track prompts, deadlines, and drafts.{' '}
-                            <Link href={essaySuite.url()} className="text-primary underline-offset-4 hover:underline">
-                                Back to Essay suite
-                            </Link>
-                        </p>
-                    </div>
-                    {supplements_nav_badge_count > 0 ? (
-                        <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-950 dark:text-amber-100">
-                            {supplements_nav_badge_count} due soon
-                        </span>
-                    ) : null}
-                </div>
+                    <Page width="default">
+                        <PageHeader
+                            eyebrow={
+                                <Link
+                                    href={essaySuite.url()}
+                                    className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
+                                >
+                                    <ArrowLeft
+                                        className="size-3.5"
+                                        aria-hidden
+                                    />
+                                    Essay suite
+                                </Link>
+                            }
+                            title="Supplemental essays"
+                            description="Track each school’s prompts, word limits, deadlines and drafts."
+                            actions={
+                                <>
+                                    {supplements_nav_badge_count > 0 ? (
+                                        <StatusBadge tone="warning">
+                                            {supplements_nav_badge_count} due
+                                            soon
+                                        </StatusBadge>
+                                    ) : null}
+                                    <Button
+                                        type="button"
+                                        onClick={() => setAddOpen(true)}
+                                        className="h-9 gap-2 rounded-full px-4"
+                                    >
+                                        <Plus
+                                            className="size-4"
+                                            weight="bold"
+                                            aria-hidden
+                                        />
+                                        Add supplement
+                                    </Button>
+                                </>
+                            }
+                        />
 
-                <div className="mb-4 flex flex-wrap gap-2 text-sm">
-                    {(
-                        [
-                            ['all', 'Total', supplements_summary.total],
-                            ['not_started', 'Not started', supplements_summary.not_started],
-                            ['in_progress', 'In progress', supplements_summary.in_progress],
-                            ['drafted', 'Drafted', supplements_summary.drafted],
-                            ['final', 'Final', supplements_summary.final],
-                        ] as const
-                    ).map(([key, label, n]) => (
-                        <button
-                            key={key}
-                            type="button"
-                            onClick={() => setFilter(key)}
-                            className={`rounded-full border px-3 py-1 transition-colors ${
-                                filter === key
-                                    ? 'border-primary/50 bg-primary/10 text-foreground'
-                                    : 'border-border/60 bg-card/40 text-muted-foreground hover:bg-muted/40'
-                            }`}
-                        >
-                            {label}: {n}
-                        </button>
-                    ))}
-                </div>
-
-                {empty ? (
-                    <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-8 text-center">
-                        <p className="text-sm text-muted-foreground">
-                            No supplemental essays added yet. Add prompts from each school&apos;s website to track
-                            your progress here.
-                        </p>
-                        <Button type="button" className="mt-4" onClick={() => setAddOpen(true)}>
-                            <Plus className="mr-1 size-4" weight="bold" />
-                            Add supplement
-                        </Button>
-                    </div>
-                ) : (
-                    <div className="space-y-8">
-                        {filteredGroups.map((g) => (
-                            <section key={g.school_name}>
-                                <h2 className="border-b border-border/50 pb-2 text-lg font-semibold text-foreground">
-                                    {g.school_name}
-                                </h2>
-                                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                                    {g.items.map((row) => {
-                                        const d = daysUntil(row.due_date);
-                                        const urgent = d != null && d >= 0 && d < 7;
-
-                                        return (
-                                            <div
-                                                key={row.id}
-                                                className="rounded-xl border border-border/60 bg-card/40 p-4 text-sm shadow-xs"
-                                            >
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span
-                                                        className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${TYPE_CLASS[row.essay_type] ?? TYPE_CLASS.other}`}
-                                                    >
-                                                        {TYPE_LABEL[row.essay_type] ?? row.essay_type}
-                                                    </span>
-                                                    <span
-                                                        className={`rounded-md border px-2 py-0.5 text-xs font-semibold uppercase ${STATUS_CLASS[row.status] ?? ''}`}
-                                                    >
-                                                        {STATUS_LABEL[row.status] ?? row.status}
-                                                    </span>
-                                                    {row.word_limit != null ? (
-                                                        <span className="text-xs text-muted-foreground">
-                                                            Limit {row.word_limit}w
-                                                        </span>
-                                                    ) : null}
-                                                </div>
-                                                <p className="mt-2 line-clamp-2 text-muted-foreground">
-                                                    {row.prompt_text}
-                                                </p>
-                                                {row.due_date ? (
-                                                    <p
-                                                        className={`mt-2 text-xs font-medium ${urgent ? 'text-destructive' : 'text-muted-foreground'}`}
-                                                    >
-                                                        Due {row.due_date}
-                                                        {d != null && d >= 0 ? ` · ${d} day${d === 1 ? '' : 's'} left` : ''}
-                                                    </p>
-                                                ) : null}
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="mt-3"
-                                                    onClick={() => openEditor(row)}
-                                                >
-                                                    Edit
-                                                </Button>
-                                            </div>
-                                        );
-                                    })}
+                        {empty ? (
+                            <EmptyState
+                                icon={
+                                    <IconTile
+                                        icon={Buildings}
+                                        tone="sky"
+                                        variant="glyph"
+                                        size="lg"
+                                    />
+                                }
+                                title="No supplemental essays yet"
+                                description="Add prompts from each school’s website to track your progress here."
+                            />
+                        ) : (
+                            <>
+                                <div className="-mx-5 mb-8 scrollbar-none overflow-x-auto px-5 sm:mx-0 sm:px-0">
+                                    <SegmentedTabs
+                                        label="Filter by status"
+                                        items={filters}
+                                        value={filter}
+                                        onChange={setFilter}
+                                    />
                                 </div>
-                            </section>
-                        ))}
-                    </div>
-                )}
 
-                <div className="mt-8 flex justify-center">
-                    <Button type="button" variant="secondary" onClick={() => setAddOpen(true)}>
-                        <Plus className="mr-1 size-4" weight="bold" />
-                        Add supplement
-                    </Button>
-                </div>
+                                {filteredGroups.length === 0 ? (
+                                    <p className="rounded-2xl border border-dashed border-border px-5 py-8 text-center text-[13.5px] text-muted-foreground">
+                                        No supplements with this status.
+                                    </p>
+                                ) : (
+                                    filteredGroups.map((g) => (
+                                        <Section
+                                            key={g.school_name}
+                                            title={g.school_name}
+                                            icon={Buildings}
+                                        >
+                                            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+                                                {g.items.map((row) => (
+                                                    <SupplementRow
+                                                        key={row.id}
+                                                        row={row}
+                                                        hydrated={hydrated}
+                                                        onOpen={() =>
+                                                            openEditor(row)
+                                                        }
+                                                    />
+                                                ))}
+                                            </ul>
+                                        </Section>
+                                    ))
+                                )}
+                            </>
+                        )}
+                    </Page>
                 </div>
 
                 {!isSubscribed ? (
-                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-4 supports-backdrop-filter:backdrop-blur-[2px]">
-                        <Card className="pointer-events-auto w-full max-w-md border-border/80 shadow-lg">
-                            <CardHeader>
-                                <CardTitle>Supplemental essay tracker requires an active plan</CardTitle>
-                                <CardDescription>
-                                    Track all your school-specific essays, deadlines, word limits and statuses in
-                                    one place
-                                </CardDescription>
-                            </CardHeader>
-                            <CardFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                                <Button type="button" className="w-full sm:w-auto" onClick={() => setPaywallOpen(true)}>
-                                    Unlock now
-                                </Button>
-                            </CardFooter>
-                        </Card>
-                    </div>
+                    <PlanOverlay
+                        title="Supplemental essay tracker requires an active plan"
+                        description="Track all your school-specific essays, deadlines, word limits and statuses in one place."
+                        onUnlock={() => setPaywallOpen(true)}
+                    />
                 ) : null}
 
-                <PaywallModal open={paywallOpen} onOpenChange={setPaywallOpen} />
+                <PaywallModal
+                    open={paywallOpen}
+                    onOpenChange={setPaywallOpen}
+                />
             </div>
 
             <Dialog open={addOpen} onOpenChange={setAddOpen}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-h-[90vh] gap-5 overflow-y-auto rounded-2xl sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle>Add supplement</DialogTitle>
+                        <DialogDescription>
+                            Copy the prompt from the school’s website.
+                        </DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-3 py-2">
-                        <div>
-                            <Label>School from list (optional)</Label>
+                    <div className="grid gap-4">
+                        <Field
+                            label={
+                                <>
+                                    School from your list
+                                    <Optional />
+                                </>
+                            }
+                            htmlFor="add-school"
+                        >
                             <Select
                                 value={addSchoolId || '__none'}
-                                onValueChange={(v) => setAddSchoolId(v === '__none' ? '' : v)}
+                                onValueChange={(v) =>
+                                    setAddSchoolId(v === '__none' ? '' : v)
+                                }
                             >
-                                <SelectTrigger>
+                                <SelectTrigger
+                                    id="add-school"
+                                    className={selectTriggerClass}
+                                >
                                     <SelectValue placeholder="Select…" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="__none">Custom name below</SelectItem>
+                                    <SelectItem value="__none">
+                                        Custom name below
+                                    </SelectItem>
                                     {active_schools.map((s) => (
                                         <SelectItem key={s.id} value={s.id}>
                                             {s.name}
@@ -446,20 +594,27 @@ export default function EssaySupplementsPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                        </div>
-                        <div>
-                            <Label htmlFor="add-name">School name</Label>
-                            <Input
+                        </Field>
+                        <Field
+                            label="School name"
+                            htmlFor="add-name"
+                            hint="Required if you don’t choose a school from your list."
+                        >
+                            <input
                                 id="add-name"
                                 value={addSchoolName}
-                                onChange={(e) => setAddSchoolName(e.target.value)}
-                                placeholder="Required if not choosing from list"
+                                onChange={(e) =>
+                                    setAddSchoolName(e.target.value)
+                                }
+                                className={fieldClass}
                             />
-                        </div>
-                        <div>
-                            <Label>Essay type</Label>
+                        </Field>
+                        <Field label="Essay type" htmlFor="add-type">
                             <Select value={addType} onValueChange={setAddType}>
-                                <SelectTrigger>
+                                <SelectTrigger
+                                    id="add-type"
+                                    className={selectTriggerClass}
+                                >
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -470,43 +625,50 @@ export default function EssaySupplementsPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                        </div>
-                        <div>
-                            <Label htmlFor="add-prompt">Prompt</Label>
+                        </Field>
+                        <Field label="Prompt" htmlFor="add-prompt">
                             <textarea
                                 id="add-prompt"
                                 value={addPrompt}
-                                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setAddPrompt(e.target.value)}
+                                onChange={(
+                                    e: ChangeEvent<HTMLTextAreaElement>,
+                                ) => setAddPrompt(e.target.value)}
                                 rows={4}
-                                className={cn(
-                                    'flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                                )}
+                                className={cn(textareaClass, 'min-h-[96px]')}
                             />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <Label htmlFor="add-limit">Word limit</Label>
-                                <Input
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="Word limit" htmlFor="add-limit">
+                                <input
                                     id="add-limit"
                                     type="number"
+                                    inputMode="numeric"
                                     value={addLimit}
-                                    onChange={(e) => setAddLimit(e.target.value)}
+                                    onChange={(e) =>
+                                        setAddLimit(e.target.value)
+                                    }
+                                    className={fieldClass}
                                 />
-                            </div>
-                            <div>
-                                <Label htmlFor="add-due">Due date</Label>
-                                <Input
+                            </Field>
+                            <Field label="Due date" htmlFor="add-due">
+                                <input
                                     id="add-due"
                                     type="date"
                                     value={addDue}
                                     onChange={(e) => setAddDue(e.target.value)}
+                                    className={fieldClass}
                                 />
-                            </div>
+                            </Field>
                         </div>
-                        <div>
-                            <Label>Initial status</Label>
-                            <Select value={addStatus} onValueChange={setAddStatus}>
-                                <SelectTrigger>
+                        <Field label="Initial status" htmlFor="add-status">
+                            <Select
+                                value={addStatus}
+                                onValueChange={setAddStatus}
+                            >
+                                <SelectTrigger
+                                    id="add-status"
+                                    className={selectTriggerClass}
+                                >
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -517,120 +679,200 @@ export default function EssaySupplementsPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                        </div>
+                        </Field>
                     </div>
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-xl"
+                            onClick={() => setAddOpen(false)}
+                        >
                             Cancel
                         </Button>
-                        <Button type="button" onClick={() => void createSupplement()}>
+                        <Button
+                            type="button"
+                            className="rounded-xl"
+                            onClick={() => void createSupplement()}
+                        >
                             Save
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={editor !== null} onOpenChange={(o) => !o && setEditor(null)}>
-                <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+            <Dialog
+                open={editor !== null}
+                onOpenChange={(o) => !o && setEditor(null)}
+            >
+                <DialogContent className="max-h-[92vh] gap-5 overflow-y-auto rounded-2xl sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Edit supplement</DialogTitle>
+                        <DialogDescription>
+                            {editor
+                                ? `${editor.school_display_name || editor.school_name} · ${TYPE_LABEL[editor.essay_type] ?? editor.essay_type}`
+                                : null}
+                        </DialogDescription>
                     </DialogHeader>
                     {editor ? (
-                        <div className="grid gap-3 py-2">
-                            <div>
-                                <Label>Prompt</Label>
-                                <p className="mt-1 rounded-md border border-border/50 bg-muted/20 p-2 text-sm text-muted-foreground">
+                        <div className="grid gap-5">
+                            <div className="rounded-xl bg-muted/70 px-4 py-3">
+                                <p className="text-[12.5px] font-medium text-muted-foreground">
+                                    Prompt
+                                </p>
+                                <p className="mt-1 text-[14px] leading-relaxed text-foreground/90">
                                     {editor.prompt_text}
                                 </p>
                             </div>
                             <div>
-                                <Label htmlFor="edit-content">Your essay</Label>
+                                <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                                    <label
+                                        htmlFor="edit-content"
+                                        className="text-[13px] text-muted-foreground"
+                                    >
+                                        Your essay
+                                    </label>
+                                    <span
+                                        className={cn(
+                                            'nums text-[12.5px]',
+                                            wcColor,
+                                        )}
+                                    >
+                                        {wc}
+                                        {limit != null
+                                            ? ` / ${limit} words`
+                                            : ' words'}
+                                    </span>
+                                </div>
                                 <textarea
                                     id="edit-content"
                                     value={editContent}
-                                    onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
-                                        setEditContent(e.target.value)
-                                    }
+                                    onChange={(
+                                        e: ChangeEvent<HTMLTextAreaElement>,
+                                    ) => setEditContent(e.target.value)}
                                     rows={10}
                                     className={cn(
-                                        'flex min-h-[200px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                        textareaClass,
+                                        'min-h-[220px] text-[15px] leading-[1.75]',
                                     )}
                                 />
-                                <p className={`mt-1 text-xs tabular-nums ${wcColor}`}>
-                                    {wc}
-                                    {limit != null ? ` / ${limit} words` : ' words'}
-                                </p>
                             </div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                                 <Button
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={scoreBusy || editContent.trim().length < 100}
+                                    className="gap-1.5 rounded-lg"
+                                    disabled={
+                                        scoreBusy ||
+                                        editContent.trim().length < 100
+                                    }
                                     onClick={() => void quickScoreEssay()}
                                 >
+                                    <Lightning className="size-4" aria-hidden />
                                     {scoreBusy ? 'Scoring…' : 'Quick score'}
                                 </Button>
+                                <span className="text-[12.5px] leading-snug text-muted-foreground">
+                                    {editContent.trim().length < 100
+                                        ? 'Needs at least 100 characters.'
+                                        : 'Sends this essay to the AI scorer. Scores are estimates.'}
+                                </span>
                             </div>
                             {quickScore ? (
-                                <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                                    <EssayStrengthScores scores={quickScore.scores as EssayRoastScores} />
-                                    <p className="mt-2 text-xs font-medium text-foreground">{quickScore.top_priority_fix}</p>
+                                <div className="space-y-3">
+                                    <EssayStrengthScores
+                                        scores={
+                                            quickScore.scores as EssayRoastScores
+                                        }
+                                    />
+                                    <p className="rounded-xl bg-muted/70 px-4 py-3 text-[13.5px] leading-relaxed font-medium text-foreground">
+                                        <span className="mb-0.5 block text-[12.5px] font-normal text-muted-foreground">
+                                            Top priority fix
+                                        </span>
+                                        {quickScore.top_priority_fix}
+                                    </p>
                                 </div>
                             ) : null}
-                            <div>
-                                <Label>Status</Label>
-                                <Select value={editStatus} onValueChange={setEditStatus}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {Object.keys(STATUS_LABEL).map((k) => (
-                                            <SelectItem key={k} value={k}>
-                                                {STATUS_LABEL[k]}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <Label htmlFor="edit-notes">Notes</Label>
-                                <textarea
-                                    id="edit-notes"
-                                    value={editNotes}
-                                    onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setEditNotes(e.target.value)}
-                                    rows={2}
-                                    className={cn(
-                                        'flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                                    )}
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <Label htmlFor="edit-limit">Word limit</Label>
-                                    <Input
+                            <div className="grid gap-4 sm:grid-cols-3">
+                                <Field label="Status" htmlFor="edit-status">
+                                    <Select
+                                        value={editStatus}
+                                        onValueChange={setEditStatus}
+                                    >
+                                        <SelectTrigger
+                                            id="edit-status"
+                                            className={selectTriggerClass}
+                                        >
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {Object.keys(STATUS_LABEL).map(
+                                                (k) => (
+                                                    <SelectItem
+                                                        key={k}
+                                                        value={k}
+                                                    >
+                                                        {STATUS_LABEL[k]}
+                                                    </SelectItem>
+                                                ),
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
+                                <Field label="Word limit" htmlFor="edit-limit">
+                                    <input
                                         id="edit-limit"
+                                        inputMode="numeric"
                                         value={editWordLimit}
-                                        onChange={(e) => setEditWordLimit(e.target.value)}
+                                        onChange={(e) =>
+                                            setEditWordLimit(e.target.value)
+                                        }
+                                        className={fieldClass}
                                     />
-                                </div>
-                                <div>
-                                    <Label htmlFor="edit-due">Due date</Label>
-                                    <Input
+                                </Field>
+                                <Field label="Due date" htmlFor="edit-due">
+                                    <input
                                         id="edit-due"
                                         type="date"
                                         value={editDue}
-                                        onChange={(e) => setEditDue(e.target.value)}
+                                        onChange={(e) =>
+                                            setEditDue(e.target.value)
+                                        }
+                                        className={fieldClass}
                                     />
-                                </div>
+                                </Field>
                             </div>
+                            <Field label="Notes" htmlFor="edit-notes">
+                                <textarea
+                                    id="edit-notes"
+                                    value={editNotes}
+                                    onChange={(
+                                        e: ChangeEvent<HTMLTextAreaElement>,
+                                    ) => setEditNotes(e.target.value)}
+                                    rows={2}
+                                    className={cn(
+                                        textareaClass,
+                                        'min-h-[60px]',
+                                    )}
+                                />
+                            </Field>
                         </div>
                     ) : null}
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setEditor(null)}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-xl"
+                            onClick={() => setEditor(null)}
+                        >
                             Close
                         </Button>
-                        <Button type="button" disabled={saving} onClick={() => void saveEditor()}>
+                        <Button
+                            type="button"
+                            className="rounded-xl"
+                            disabled={saving}
+                            onClick={() => void saveEditor()}
+                        >
                             Save
                         </Button>
                     </DialogFooter>

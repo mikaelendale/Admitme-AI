@@ -2,13 +2,36 @@
 
 namespace App\Models;
 
+use App\Domain\Students\ProfileProvenanceObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+#[ObservedBy(ProfileProvenanceObserver::class)]
 class OnboardingProfile extends Model
 {
-    use SoftDeletes;
+    use HasFactory, SoftDeletes;
+
+    /**
+     * Set by StudentProfileService when it records provenance itself, so the observer does not record the save again.
+     */
+    public bool $provenanceHandled = false;
+
+    /**
+     * Tracked changes captured while saving, written as provenance once the save succeeds.
+     *
+     * @var array{changes: array<string, array{0: mixed, 1: mixed}>, revision_before: int|null}|null
+     */
+    public ?array $pendingProvenance = null;
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'revision' => 1,
+    ];
 
     protected $fillable = [
         'user_id',
@@ -84,6 +107,9 @@ class OnboardingProfile extends Model
             'gpa_scale' => 'decimal:2',
             'gpa_normalized_4' => 'decimal:2',
             'resume_pdf_unreadable' => 'boolean',
+            'revision' => 'integer',
+            'budget_amount' => 'integer',
+            'unknown_fields_json' => 'array',
         ];
     }
 

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in · Synthetic Lakeside applicant portal</title>
+<style>body{font-family:system-ui,sans-serif;max-width:560px;margin:40px auto;padding:0 16px}label{display:block;margin-top:14px;font-weight:600}input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box}button{margin-top:18px;padding:9px 16px}</style>
+<script src="portal.js"></script></head>
+<body>
+<h1>Synthetic Lakeside University — applicant portal</h1>
+<p>A synthetic practice portal for automated tests. Not a real college; nothing here is sent anywhere. Any username and password work.</p>
+<h2>Sign in to continue your application</h2>
+<form id="login">
+  <label for="username">Email or username</label>
+  <input id="username" name="username" autocomplete="username" required>
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+  <button type="submit">Sign in</button>
+</form>
+<script>
+document.getElementById('login').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var user = document.getElementById('username').value.trim();
+    if (!user || !document.getElementById('password').value) return;
+    localStorage.setItem('lakeside_portal_session', user);
+    var next = new URLSearchParams(location.search).get('next') || 'apply.html';
+    location.assign(/^[a-z0-9-]+\.html$/.test(next) ? next : 'apply.html');
+});
+</script>
+</body></html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Step 2 of 3 · Education · Synthetic Lakeside application</title>
+<style>body{font-family:system-ui,sans-serif;max-width:620px;margin:40px auto;padding:0 16px}label{display:block;margin-top:14px;font-weight:600}input,select{width:100%;padding:8px;margin-top:4px;box-sizing:border-box}button{margin-top:20px;padding:9px 16px}#form-alert{color:#b00020}</style>
+<script src="portal.js"></script></head>
+<body>
+<p id="who"></p>
+<h1>First-year application — Fall 2027</h1>
+<h2>Step 2 of 3: Education</h2>
+<p role="alert" id="form-alert" hidden></p>
+<form id="step2">
+  <label for="curriculum">Curriculum</label>
+  <select id="curriculum" name="curriculum" required>
+    <option value="">Choose…</option>
+    <option>A-Levels</option><option>International Baccalaureate</option><option>US high school diploma</option><option>WAEC / WASSCE</option><option>Other</option>
+  </select>
+  <label for="graduation_year">Expected secondary-school graduation year</label>
+  <select id="graduation_year" name="graduation_year" required>
+    <option value="">Choose…</option><option>2025</option><option>2026</option><option>2027</option><option>2028</option>
+  </select>
+  <label for="major">Intended major</label>
+  <input id="major" name="major" required>
+  <fieldset style="margin-top:16px">
+    <legend>Are you applying for financial aid?</legend>
+    <label style="font-weight:400"><input type="radio" name="aid" value="yes" style="width:auto"> Yes</label>
+    <label style="font-weight:400"><input type="radio" name="aid" value="no" style="width:auto"> No</label>
+  </fieldset>
+  <p><a href="apply.html">Back</a></p>
+  <button type="submit">Save and continue</button>
+</form>
+<script>
+if (LakesidePortal.requireLogin()) LakesidePortal.bindStep('step2', 'review.html');
+</script>
+</body></html>

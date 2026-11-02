@@ -2,24 +2,20 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Concerns\UsesConfiguredModel;
 use App\Support\AdmissionsCycle;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
-use Laravel\Ai\Attributes\Model;
-use Laravel\Ai\Attributes\Provider;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
-use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use Stringable;
 
-#[Provider(Lab::OpenAI)]
-#[Model('gpt-5-nano')]
 #[Timeout(300)]
 class CouncilJudgeAgent implements Agent, HasStructuredOutput
 {
-    use Promptable;
+    use Promptable, UsesConfiguredModel;
 
     public function timeout(): int
     {

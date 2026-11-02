@@ -4,6 +4,7 @@
  */
 export function readXsrfTokenFromCookie(): string | null {
     const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/);
+
     if (!match?.[1]) {
         return null;
     }
@@ -26,9 +27,7 @@ export function buildLaravelJsonHeaders(
     inertiaCsrfToken?: string | null,
 ): Record<string, string> {
     const token =
-        inertiaCsrfToken?.trim() ||
-        readCsrfTokenFromMeta()?.trim() ||
-        '';
+        inertiaCsrfToken?.trim() || readCsrfTokenFromMeta()?.trim() || '';
 
     const xsrf = readXsrfTokenFromCookie();
 

@@ -1,0 +1,30 @@
+{
+    "suite": "writing",
+    "description": "Writing-coach feedback on synthetic drafts. A case passes when the policy is respected (no call under no_ai_assistance; no replacement text under feedback_only), enough comments survive the verbatim-quote check, and none is dropped beyond the allowed share.",
+    "cases": [
+        {
+            "id": "feedback-only",
+            "policy": "feedback_only",
+            "prompt": "Describe a challenge you faced and what you learned from it.",
+            "word_limit": 650,
+            "draft": "Debate taught me to listen before I speak. In my first tournament I has argued so fast that I missed my opponent's best point, and we lost. Afterwards our coach asked me to repeat her argument back to her, word for word, and I could not. Since then I take notes on every speech before I answer it. I want to study economics because good policy also starts with listening to the people it affects.",
+            "expect": { "min_comments": 1, "max_drop_rate": 0.34 }
+        },
+        {
+            "id": "light-editing",
+            "policy": "light_editing",
+            "prompt": "Why this college?",
+            "word_limit": 250,
+            "draft": "I want to attend Synthetic Lakeside because of it's economics department and the small seminars. Last summer I volunteered at a microfinance office in Lagos, where I seen how small loans changed families businesses. I hope to research how credit reaches women traders.",
+            "expect": { "min_comments": 1, "max_drop_rate": 0.34 }
+        },
+        {
+            "id": "no-ai-assistance",
+            "policy": "no_ai_assistance",
+            "prompt": "Tell us about yourself.",
+            "word_limit": 300,
+            "draft": "I grew up between two languages and learned to translate for my grandmother at the market.",
+            "expect": { "refused": true }
+        }
+    ]
+}

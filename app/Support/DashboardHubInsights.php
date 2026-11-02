@@ -54,8 +54,7 @@ final class DashboardHubInsights
             }
         }
 
-        $conversationsCount = (int) DB::table('agent_conversations')
-            ->where('user_id', $user->id)
+        $conversationsCount = (int) ConversationOwnership::whereUser(DB::table('agent_conversations'), $user->id)
             ->count();
 
         return [

@@ -1,0 +1,168 @@
+{
+    "key": "synthetic-first-year-2026",
+    "label": "Typical first-year application (practice snapshot)",
+    "note": "A practice copy of the sections most first-year applications ask for — not the live portal. With the AdmitMe browser extension, plain details from your profile (name, email, country…) can be typed into the real form after you approve each one; everything else you enter yourself.",
+    "sections": [
+        {
+            "title": "Profile",
+            "fields": [
+                {
+                    "key": "legal_name",
+                    "label": "Legal name",
+                    "required": true,
+                    "source": "user.name",
+                    "fill": true
+                },
+                {
+                    "key": "email",
+                    "label": "Email",
+                    "required": true,
+                    "source": "user.email",
+                    "fill": true
+                },
+                {
+                    "key": "country",
+                    "label": "Country of residence",
+                    "required": true,
+                    "source": "profile.location_country",
+                    "fill": true
+                },
+                {
+                    "key": "citizenship",
+                    "label": "Citizenship",
+                    "required": true,
+                    "source": "profile.citizenship_residency",
+                    "fill": true
+                }
+            ]
+        },
+        {
+            "title": "Education",
+            "fields": [
+                {
+                    "key": "current_year",
+                    "label": "Current year in school",
+                    "required": true,
+                    "source": "profile.current_grade",
+                    "fill": true
+                },
+                {
+                    "key": "graduation_year",
+                    "label": "Graduation year",
+                    "required": true,
+                    "source": "profile.graduation_year",
+                    "fill": true
+                },
+                {
+                    "key": "curriculum",
+                    "label": "Curriculum",
+                    "required": true,
+                    "source": "profile.curriculum",
+                    "fill": true
+                },
+                {
+                    "key": "grades",
+                    "label": "Grades (GPA and scale)",
+                    "required": false,
+                    "source": "profile.gpa"
+                }
+            ]
+        },
+        {
+            "title": "Testing",
+            "fields": [
+                {
+                    "key": "sat",
+                    "label": "SAT",
+                    "required": false,
+                    "source": "profile.sat_score",
+                    "fill": true
+                },
+                {
+                    "key": "act",
+                    "label": "ACT",
+                    "required": false,
+                    "source": "profile.act_score",
+                    "fill": true
+                },
+                {
+                    "key": "test_plan",
+                    "label": "Report test scores?",
+                    "required": true,
+                    "source": "judgment.test_plan"
+                },
+                {
+                    "key": "english_test",
+                    "label": "English proficiency report",
+                    "required": false,
+                    "source": "checklist.english_test"
+                }
+            ]
+        },
+        {
+            "title": "Activities",
+            "fields": [
+                {
+                    "key": "activities",
+                    "label": "Activities (up to 10)",
+                    "required": false,
+                    "source": "profile.activities"
+                },
+                {
+                    "key": "activity_order",
+                    "label": "Order of activities",
+                    "required": false,
+                    "source": "judgment.activity_order"
+                }
+            ]
+        },
+        {
+            "title": "Writing",
+            "fields": [
+                {
+                    "key": "personal_statement",
+                    "label": "Personal statement (650 words max)",
+                    "required": true,
+                    "source": "writing.personal_statement"
+                },
+                {
+                    "key": "supplements",
+                    "label": "This college's essays",
+                    "required": false,
+                    "source": "writing.supplements"
+                }
+            ]
+        },
+        {
+            "title": "College questions",
+            "fields": [
+                {
+                    "key": "entry_term",
+                    "label": "Entry term",
+                    "required": true,
+                    "source": "profile.target_intake",
+                    "fill": true
+                },
+                {
+                    "key": "major",
+                    "label": "Intended major",
+                    "required": false,
+                    "source": "profile.intended_majors",
+                    "fill": true
+                },
+                {
+                    "key": "round",
+                    "label": "Application round",
+                    "required": true,
+                    "source": "checklist.round"
+                },
+                {
+                    "key": "additional_info",
+                    "label": "Additional information (optional)",
+                    "required": false,
+                    "source": "suggestion.additional_info"
+                }
+            ]
+        }
+    ]
+}

@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadOnlyTool;
 use App\Models\User;
 use App\Support\FeatureQuotaManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -13,7 +14,7 @@ use Stringable;
 /**
  * Lets the mentor agent read the student's plan limits and current usage (quotas).
  */
-class GetFeatureQuotaTool implements Tool
+class GetFeatureQuotaTool implements ReadOnlyTool, Tool
 {
     public function __construct(
         protected User $user,

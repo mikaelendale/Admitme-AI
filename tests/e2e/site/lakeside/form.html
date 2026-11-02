@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Synthetic Lakeside University — Apply (synthetic practice portal)</title>
+        <style>
+            body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+            label { display: block; margin-top: 12px; font-weight: 600; }
+            input, select, textarea { display: block; width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; }
+            button { margin-top: 16px; }
+        </style>
+    </head>
+    <body>
+        <h1>Synthetic Lakeside University — first-year application</h1>
+        <p>A synthetic practice portal for automated tests. Not a real college; nothing here is sent anywhere.</p>
+        <form id="application" action="/lakeside/submitted.html" method="get">
+            <input type="hidden" name="portal_session" value="SYNTHETIC-HIDDEN-SECRET" />
+
+            <label for="legal_name">Legal name</label>
+            <input id="legal_name" name="legal_name" type="text" required />
+
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" required />
+
+            <label for="country">Country of residence</label>
+            <select id="country" name="country" required>
+                <option value="">Choose…</option>
+                <option>Ghana</option>
+                <option>Kenya</option>
+                <option>Nigeria</option>
+                <option>United States</option>
+            </select>
+
+            <label for="citizenship">Citizenship</label>
+            <input id="citizenship" name="citizenship" type="text" />
+
+            <label for="curriculum">Curriculum</label>
+            <select id="curriculum" name="curriculum">
+                <option value="">Choose…</option>
+                <option>A-Levels</option>
+                <option>IB Diploma</option>
+                <option>US High School Diploma</option>
+            </select>
+
+            <label for="major">Intended major</label>
+            <input id="major" name="major" type="text" />
+
+            <label for="essay">Personal statement (650 words max)</label>
+            <textarea id="essay" name="essay" rows="6"></textarea>
+
+            <label for="portal_password">Portal password</label>
+            <input id="portal_password" name="portal_password" type="password" value="synthetic-portal-password" />
+
+            <label for="transcript">Upload transcript</label>
+            <input id="transcript" name="transcript" type="file" />
+
+            <button type="submit" id="submit">Submit application</button>
+        </form>
+        <script>
+            // Test instrumentation: count input events per field (each approved value must be typed exactly once)
+            // and record any submission attempt (the extension must never submit).
+            document.addEventListener('input', (event) => {
+                const field = event.target;
+                field.dataset.inputs = String(Number(field.dataset.inputs || 0) + 1);
+            });
+            document.getElementById('application').addEventListener('submit', (event) => {
+                event.preventDefault();
+                document.body.dataset.submitted = 'yes';
+            });
+        </script>
+    </body>
+</html>
